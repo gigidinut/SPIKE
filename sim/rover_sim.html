@@ -12,7 +12,7 @@
 :root {
   color-scheme: light;
   --bg: #E9EDE8; --panel: #F6F8F4; --raised: #FFFFFF; --ink: #1B2425; --muted: #5B6867;
-  --line: #CFD7D0; --floor: #F8F9F4; --grid: #E6EAE2; --grid-major: #CDD5CB;
+  --line: #CFD7D0; --floor: #F8F9F4; --grid: #E6EAE2; --grid-major: #CDD5CB; --off-floor: #D9DFD6;
   --wall: #B67C55; --wall-edge: #4A3121; --path: #2459C4; --sonar: #D4861A;
   --green: #2E9E57; --red: #CF3A33; --accent: #2459C4; --accent-ink: #FFFFFF;
   --ok: #2E8B4C; --warn: #A86E12; --bad: #C0392F;
@@ -25,7 +25,7 @@
   :root {
     color-scheme: dark;
     --bg: #0F1415; --panel: #151C1E; --raised: #1B2427; --ink: #E2E9E6; --muted: #92A09E;
-    --line: #29353A; --floor: #121A1C; --grid: #1A2427; --grid-major: #283539;
+    --line: #29353A; --floor: #121A1C; --grid: #1A2427; --grid-major: #283539; --off-floor: #090D0E;
     --wall: #8C5B3D; --wall-edge: #E0B996; --path: #74A6FF; --sonar: #F2A43C;
     --green: #3DBA6B; --red: #EA5650; --accent: #74A6FF; --accent-ink: #0B1220;
     --ok: #4CC07A; --warn: #E2A53E; --bad: #F06A62;
@@ -52,9 +52,9 @@ button.primary { background: var(--accent); color: var(--accent-ink); border-col
 .layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 14px; align-items: start; }
 @media (max-width: 980px) { .layout { grid-template-columns: minmax(0, 1fr); } }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
-.tools { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
-.tools button { border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 6px 11px; font-family: var(--font-display); font-size: 15px; letter-spacing: 0.03em; }
-.tools button:last-child { border-right: 0; }
+.tools, .viewtools { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.tools button, .viewtools button { border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 6px 11px; font-family: var(--font-display); font-size: 15px; letter-spacing: 0.03em; }
+.tools button:last-child, .viewtools button:last-child { border-right: 0; }
 .tools button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
 .swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: 1px; }
 .check { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 13px; cursor: pointer; }
@@ -140,6 +140,12 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
           <button type="button" data-tool="start" aria-pressed="false">Start</button>
           <button type="button" data-tool="erase" aria-pressed="false">Erase</button>
         </div>
+        <div class="viewtools" role="group" aria-label="View">
+          <button type="button" id="btnZoomOut" title="Zoom out" aria-label="Zoom out">&minus;</button>
+          <button type="button" id="btnZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+          <button type="button" id="btnFit" title="Fit the view to the course">Fit course</button>
+          <button type="button" id="btnFloor" title="Show the whole 10 m by 10 m floor">Whole floor</button>
+        </div>
         <label class="check"><input type="checkbox" id="snap" checked> Snap 5 cm</label>
         <label class="check"><input type="checkbox" id="showEchoes" checked> Echoes</label>
         <label class="check"><input type="checkbox" id="showPath" checked> Path</label>
@@ -150,12 +156,12 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
         <div class="hud" aria-live="polite">
           <span class="chip status s-loading" id="hudStatus">Loading Python</span>
           <span class="chip" id="hudTime">t 0.0 s</span>
-          <span class="chip" id="hudLegs">legs 0</span>
-          <span class="chip" id="hudSweeps">sweeps 0</span>
-          <span class="chip" id="hudGreen">green: not yet</span>
+          <span class="chip" id="hudLegs">steps 0</span>
+          <span class="chip" id="hudSweeps">looks 0</span>
+          <span class="chip" id="hudGreen">colours: none yet</span>
         </div>
       </div>
-      <p class="hint" id="hint">Drag with Wall, Green or Red to draw. Click with Start or Erase. Keys: R run · Space pause · N step.</p>
+      <p class="hint" id="hint">Drag with Wall, Green or Red to draw. Click with Start or Erase. Scroll to zoom; drag with Look to move the view. The floor is 10 m by 10 m. Keys: R run · Space pause · N step.</p>
     </section>
 
     <aside class="panel">
@@ -168,16 +174,16 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
 
       <div class="tabpane" id="tab-log" role="tabpanel">
         <div class="logbar">
-          <label class="check"><input type="checkbox" id="showTurns"> Show turn lines</label>
+          <label class="check"><input type="checkbox" id="showTurns"> Show drive and turn lines</label>
           <label class="check"><input type="checkbox" id="follow" checked> Follow</label>
         </div>
         <div class="legend">
-          <span><span class="swatch" style="background:var(--green)"></span>green</span>
-          <span><span class="swatch" style="background:var(--red)"></span>red</span>
-          <span><span class="swatch" style="background:var(--k-leg)"></span>leg done</span>
-          <span><span class="swatch" style="background:var(--k-block)"></span>leg blocked</span>
+          <span><span class="swatch" style="background:var(--green)"></span>colour found</span>
+          <span><span class="swatch" style="background:var(--red)"></span>run finished</span>
+          <span><span class="swatch" style="background:var(--k-leg)"></span>step done</span>
+          <span><span class="swatch" style="background:var(--k-block)"></span>step blocked</span>
           <span><span class="swatch" style="background:var(--k-decision)"></span>decision</span>
-          <span><span class="swatch" style="background:var(--k-radar)"></span>look / radar</span>
+          <span><span class="swatch" style="background:var(--k-radar)"></span>look / wall check</span>
         </div>
         <div class="log hide-turns" id="log"><div class="empty" id="logEmpty">Everything the program prints appears here. Click a line to see where the rover was when it printed it.</div><ol id="logList"></ol></div>
       </div>
@@ -256,33 +262,200 @@ _L = "ABCDEF"
 port = _NS(A=0, B=1, C=2, D=3, E=4, F=5)
 
 
+# ---- Readings, and loops that never wait ----
+# On the hub every reading takes a little time. Here time only moves on when
+# the program awaits. A loop that reads sensors but never awaits would never
+# see the rover move, so after many readings in a row time moves on 1 ms per
+# reading - and after very many the program stops with an explanation
+# instead of freezing the page.
+_reads = [0]
+
+def _reading():
+    _reads[0] += 1
+    if _reads[0] > 200:
+        _sim.advance(1)
+    if _reads[0] > 60000:
+        raise RuntimeError("A loop in your program reads sensors over and over but never waits. "
+                           "Put  await runloop.sleep_ms(10)  inside the loop: in the simulator the "
+                           "rover can only move while your program waits.")
+
+def _waited():
+    _reads[0] = 0
+
+
+# ---- Motors ----
+def _speed(velocity):
+    if isinstance(velocity, bool) or not isinstance(velocity, int):
+        raise TypeError("motor speeds must be whole numbers, not " + repr(velocity)
+                        + " - use int(...). The hub stops with an error here too.")
+    return velocity
+
 def _run(p, velocity, *a, **k):
-    _sim.motorRun(_L[p], velocity)
+    _sim.motorRun(_L[p], _speed(velocity))
 
 def _stop(p, *a, **k):
     _sim.motorStop(_L[p])
 
 def _rel(p):
+    _reading()
     return int(_sim.relPos(_L[p]))
 
 def _reset_rel(p, position=0):
     _sim.resetRelPos(_L[p], position)
 
-_module("motor", run=_run, stop=_stop, relative_position=_rel,
-        reset_relative_position=_reset_rel, velocity=lambda p: int(_sim.motorVel(_L[p])),
+def _abs(p):
+    return (_rel(p) + 180) % 360 - 180
+
+_moves = []      # movements running in the background, cancelled when a run ends
+
+def _movement(coro):
+    """Like the hub: a motor movement starts at once, even without await.
+    Awaiting it waits until it has finished."""
+    t = asyncio.ensure_future(coro)
+    _moves.append(t)
+    return t
+
+def _allowed_ms(degrees, velocity):
+    return int(abs(degrees) / max(1, abs(velocity)) * 3000) + 1000
+
+async def _until_turned(ports, degrees, allowed_ms):
+    starts = [int(_sim.relPos(_L[q])) for q in ports]
+    waited = 0
+    while max(abs(int(_sim.relPos(_L[q])) - s0) for q, s0 in zip(ports, starts)) < degrees:
+        await _sim.sleep(10)
+        waited += 10
+        if waited >= allowed_ms:
+            return            # stalled - give up, as a stalled motor does
+    _waited()
+
+def _run_for_degrees(p, degrees, velocity, *a, **k):
+    _speed(velocity)
+    way = (1 if degrees >= 0 else -1) * (1 if velocity >= 0 else -1)
+    _sim.motorRun(_L[p], way * abs(velocity))
+    async def finish():
+        await _until_turned([p], abs(degrees), _allowed_ms(degrees, velocity))
+        _sim.motorStop(_L[p])
+    return _movement(finish())
+
+def _run_for_time(p, duration, velocity, *a, **k):
+    _sim.motorRun(_L[p], _speed(velocity))
+    async def finish():
+        await _sim.sleep(duration)
+        _sim.motorStop(_L[p])
+    return _movement(finish())
+
+def _run_to_relative_position(p, position, velocity, *a, **k):
+    _speed(velocity)
+    diff = position - int(_sim.relPos(_L[p]))
+    _sim.motorRun(_L[p], abs(velocity) if diff >= 0 else -abs(velocity))
+    async def finish():
+        await _until_turned([p], abs(diff), _allowed_ms(diff, velocity))
+        _sim.motorStop(_L[p])
+    return _movement(finish())
+
+_module("motor", run=_run, stop=_stop, relative_position=_rel, absolute_position=_abs,
+        reset_relative_position=_reset_rel,
+        velocity=lambda p: (_reading(), int(_sim.motorVel(_L[p])))[1],
+        run_for_degrees=_run_for_degrees, run_for_time=_run_for_time,
+        run_to_relative_position=_run_to_relative_position,
         COAST=0, BRAKE=1, HOLD=2, CONTINUE=3, SMART_COAST=4, SMART_BRAKE=5)
-_module("distance_sensor", distance=lambda p: int(_sim.distance()))
-_module("color_sensor", color=lambda p: int(_sim.color()))
+
+
+# ---- Motor pairs: two drive motors moved together ----
+# Like the hub, a pair treats its left motor as mounted mirror-image, so
+# "forward" turns the left motor backwards.
+_pairs = {}
+
+def _pair(pair, left, right):
+    _pairs[pair] = (left, right)
+    _sim.setDrivePorts(_L[left], _L[right])
+
+def _ports(pair):
+    if pair not in _pairs:
+        raise RuntimeError("pair the motors first, e.g. motor_pair.pair(motor_pair.PAIR_1, port.B, port.A)")
+    return _pairs[pair]
+
+def _set_pair(pair, left_v, right_v):
+    left, right = _ports(pair)
+    _sim.motorRun(_L[left], -_speed(left_v))
+    _sim.motorRun(_L[right], _speed(right_v))
+
+def _steer(steering, velocity):
+    s = max(-100, min(100, steering))
+    if s >= 0:
+        return velocity, int(velocity * (100 - 2 * s) / 100)
+    return int(velocity * (100 + 2 * s) / 100), velocity
+
+def _pair_stop(pair, *a, **k):
+    left, right = _ports(pair)
+    _sim.motorStop(_L[left])
+    _sim.motorStop(_L[right])
+
+def _pair_for_degrees(pair, degrees, left_v, right_v):
+    if degrees < 0:
+        left_v, right_v = -left_v, -right_v
+    _set_pair(pair, left_v, right_v)
+    async def finish():
+        await _until_turned(list(_ports(pair)), abs(degrees),
+                            _allowed_ms(degrees, max(abs(left_v), abs(right_v))))
+        _pair_stop(pair)
+    return _movement(finish())
+
+def _pair_for_time(pair, duration, left_v, right_v):
+    _set_pair(pair, left_v, right_v)
+    async def finish():
+        await _sim.sleep(duration)
+        _pair_stop(pair)
+    return _movement(finish())
+
+_module("motor_pair", PAIR_1=0, PAIR_2=1, PAIR_3=2, pair=_pair,
+        unpair=lambda pair: _pairs.pop(pair, None),
+        move=lambda pair, steering, velocity=360, **k: _set_pair(pair, *_steer(steering, _speed(velocity))),
+        move_tank=lambda pair, left_velocity, right_velocity, **k: _set_pair(pair, left_velocity, right_velocity),
+        move_for_degrees=lambda pair, degrees, steering, velocity=360, **k:
+            _pair_for_degrees(pair, degrees, *_steer(steering, _speed(velocity))),
+        move_tank_for_degrees=lambda pair, degrees, left_velocity, right_velocity, **k:
+            _pair_for_degrees(pair, degrees, left_velocity, right_velocity),
+        move_for_time=lambda pair, duration, steering, velocity=360, **k:
+            _pair_for_time(pair, duration, *_steer(steering, _speed(velocity))),
+        move_tank_for_time=lambda pair, duration, left_velocity, right_velocity, **k:
+            _pair_for_time(pair, duration, left_velocity, right_velocity),
+        stop=_pair_stop)
+
+
+# ---- Sensors ----
+def _distance(p):
+    _reading()
+    return int(_sim.distance())
+
+def _colour(p):
+    _reading()
+    return int(_sim.color())
+
+_REFLECTION = {6: 25, 9: 45, 10: 90}
+_RGBI = {6: (150, 500, 200, 400), 9: (700, 150, 120, 450), 10: (900, 900, 900, 1000)}
+
+_module("distance_sensor", distance=_distance)
+_module("color_sensor", color=_colour,
+        reflection=lambda p: _REFLECTION.get(_colour(p), 50),
+        rgbi=lambda p: _RGBI.get(_colour(p), (500, 500, 500, 600)))
 _module("color", UNKNOWN=-1, BLACK=0, MAGENTA=1, PURPLE=2, BLUE=3, AZURE=4, TURQUOISE=5,
         GREEN=6, YELLOW=7, ORANGE=8, RED=9, WHITE=10)
 
+# SPIKE parts the simulator does not have: they accept anything and do nothing.
+_module("force_sensor", pressed=lambda p: False, force=lambda p: 0, raw=lambda p: 0)
+for _name in ("color_matrix", "device", "orientation", "app"):
+    _module(_name)
+
 
 async def _sleep_ms(ms):
+    _waited()
     await _sim.sleep(ms)
 
 async def _until(fn, timeout=0):
     waited = 0
     while not fn():
+        _waited()
         await _sim.sleep(10)
         waited += 10
         if timeout and waited >= timeout:
@@ -290,6 +463,9 @@ async def _until(fn, timeout=0):
 
 
 def _finished(task):
+    for t in _moves:
+        t.cancel()
+    _moves.clear()
     if task.cancelled():
         _sim.programDone("cancelled")
         return
@@ -307,17 +483,30 @@ def _runloop_run(*coros):
 
 _module("runloop", sleep_ms=_sleep_ms, run=_runloop_run, until=_until)
 
-_motion = _NS(tilt_angles=lambda: (int(_sim.tiltYaw()), 0, 0),
+_motion = _NS(tilt_angles=lambda: (_reading(), (int(_sim.tiltYaw()), 0, 0))[1],
               reset_yaw=lambda v=0: _sim.resetYaw(v))
+
+_right_checks = [0]
+def _button_pressed(b):
+    """No real buttons here: the simulator presses RIGHT for you whenever a
+    program waits for it (every other check of RIGHT reports it pressed), so
+    setup_check runs straight through. LEFT is never pressed."""
+    _reading()
+    if b != 2:
+        return 0
+    _right_checks[0] += 1
+    return 100 if _right_checks[0] % 2 == 0 else 0
+
 _module("hub", port=port, motion_sensor=_motion,
-        button=_NS(pressed=lambda b: False, LEFT=1, RIGHT=2),
+        button=_NS(pressed=_button_pressed, LEFT=1, RIGHT=2),
         light_matrix=_Noop(), sound=_Noop(), light=_Noop())
 
 _fake_time = types.ModuleType("time")
 _fake_time.__dict__.update(
     ticks_ms=lambda: int(_sim.now()), ticks_us=lambda: int(_sim.now() * 1000),
     ticks_diff=lambda a, b: a - b, ticks_add=lambda a, b: a + b,
-    sleep_ms=lambda ms: _sim.advance(ms), sleep=lambda s: _sim.advance(s * 1000),
+    sleep_ms=lambda ms: (_waited(), _sim.advance(ms))[1],
+    sleep=lambda s: (_waited(), _sim.advance(s * 1000))[1],
     time=lambda: _sim.now() / 1000)
 
 
@@ -328,28 +517,32 @@ builtins.print = _print
 
 
 def _cancel_all():
-    for t in _tasks:
+    for t in _tasks + _moves:
         t.cancel()
     _tasks.clear()
+    _moves.clear()
+    _pairs.clear()
+    _waited()
 
 
 def _instrument(ns):
-    """Read-only hooks for the map overlay: grab the Maze object explore()
-    builds, and the position it plans from. Nothing the program sees changes."""
-    M = ns.get("Maze")
+    """Read-only hooks for the map overlay: grab the CourseMap object explore()
+    builds, and the square it plans from. Nothing the program sees changes."""
+    M = ns.get("CourseMap")
     if isinstance(M, type):
         orig = M.__init__
         def __init__(self, *a, **k):
             orig(self, *a, **k)
             ns["__maze__"] = self
         M.__init__ = __init__
-    ps = ns.get("plan_step")
-    if callable(ps):
-        def plan_step(maze, pos, heading, target, *a, **k):
-            ns["__pos__"] = pos
-            ns["__target__"] = target
-            return ps(maze, pos, heading, target, *a, **k)
-        ns["plan_step"] = plan_step
+    nm = ns.get("next_move")
+    if callable(nm):
+        def next_move(course_map, square, facing, *a, **k):
+            ns["__pos__"] = square
+            result = nm(course_map, square, facing, *a, **k)
+            ns["__target__"] = result[1] if isinstance(result, tuple) else None
+            return result
+        ns["next_move"] = next_move
 
 
 def _start(src, filename):
@@ -368,12 +561,12 @@ def _start(src, filename):
 
 
 def _snapshot():
-    out = {"cell": _ns.get("CELL_CM"), "pos": _ns.get("__pos__"), "target": _ns.get("__target__")}
+    out = {"cell": _ns.get("STEP_CM"), "pos": _ns.get("__pos__"), "target": _ns.get("__target__")}
     m = _ns.get("__maze__")
     if m is not None:
         out["visited"] = list(getattr(m, "visited", ()))
         out["solid"] = list(getattr(m, "solid", ()))
-        out["closed"] = list(getattr(m, "closed", ()))
+        out["blocked"] = list(getattr(m, "blocked", ()))
     return json.dumps(out)
 </script>
 
@@ -383,11 +576,17 @@ def _snapshot():
 
 /* ===================== Rover and sensor model ===================== */
 const PHYS_PARAMS = [
-  ['wheelDiameter', 5.6, 'Wheel diameter, cm'],
-  ['trackWidth', 11.2, 'Distance between the wheels, cm (sets the spin rate)'],
-  ['bodyRadius', 8, 'Body radius for collisions, cm'],
-  ['sonarOffset', 6, 'Distance sensor ahead of the centre, cm'],
-  ['colorOffset', 0, 'Colour sensor ahead of the centre, cm (negative is behind)'],
+  ['leftMotorPort', 'B', 'Port of the LEFT drive motor', ['A', 'B', 'C', 'D', 'E', 'F']],
+  ['rightMotorPort', 'A', 'Port of the RIGHT drive motor', ['A', 'B', 'C', 'D', 'E', 'F']],
+  ['leftMotorForward', -1, 'Speed sign that turns the LEFT wheel forward (-1 when mounted mirror-image)', [-1, 1]],
+  ['rightMotorForward', 1, 'Speed sign that turns the RIGHT wheel forward', [1, -1]],
+  ['wheelDiameter', 8.3, 'Wheel diameter, cm'],
+  ['trackWidth', 12.8, 'Distance between the wheel centres, cm (sets the spin rate)'],
+  ['bodyWidth', 15, 'Rover width, cm'],
+  ['bodyFront', 7, 'Front of the rover, cm ahead of the wheel centres'],
+  ['bodyBack', 11, 'Back of the rover, cm behind the wheel centres'],
+  ['sonarOffset', 7, 'Distance sensor ahead of the wheel centres, cm'],
+  ['colorOffset', -10, 'Colour sensor ahead of the wheel centres, cm (negative is behind)'],
   ['coneHalf', 12, 'Distance sensor half-cone, deg'],
   ['maxIncidence', 40, 'Echo is lost beyond this angle off square, deg'],
   ['sonarRange', 200, 'Distance sensor range, cm'],
@@ -439,9 +638,10 @@ function newSim() {
   const segs = [];
   for (const [a, b, c, d] of course.walls) segs.push(['v', a, c, d], ['v', b, c, d], ['h', c, a, b], ['h', d, a, b]);
   const [sx0, sy0] = course.start;
-  return { x: sx0, y: sy0, h: 0, yawOff: 0, A: 0, B: 0, posA: 0, posB: 0, t: 0,
+  return { x: sx0, y: sy0, h: 0, yawOff: 0, t: 0,
+           vel: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 }, pos: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 },
            path: [[sx0, sy0]], echoes: [], beam: null, log: [], legs: 0, blockedLegs: 0, sweeps: 0,
-           greenDone: false, status: 'running', cancelled: false, timedOut: false, debt: 0, segs, snap: null };
+           found: [], status: 'running', cancelled: false, timedOut: false, debt: 0, segs, snap: null };
 }
 const tick = ms => new Promise(r => setTimeout(r, ms));
 function advance(me, ms) {
@@ -459,30 +659,43 @@ async function sleep(ms) {
   if (me.cancelled) throw new Cancelled('cancelled');
 }
 
-function collides(x, y) {
-  const r = P.bodyRadius;
+// The rover is a rectangle: bodyFront ahead of the wheel centres, bodyBack
+// behind them, bodyWidth across. (x, y) is the middle of the wheels, h the
+// heading. Walls are axis-aligned boxes; separating-axis test on 4 axes.
+function collides(x, y, h) {
+  const r = rad(h), fx = -Math.sin(r), fy = Math.cos(r), qx = Math.cos(r), qy = Math.sin(r);
+  const L = (P.bodyFront + P.bodyBack) / 2, Hw = P.bodyWidth / 2, off = (P.bodyFront - P.bodyBack) / 2;
+  const cx = x + fx * off, cy = y + fy * off;
+  const ex = Math.abs(fx) * L + Math.abs(qx) * Hw, ey = Math.abs(fy) * L + Math.abs(qy) * Hw;
   for (const [a, b, c, d] of course.walls) {
-    const cx = Math.max(a, Math.min(x, b)), cy = Math.max(c, Math.min(y, d));
-    if ((x - cx) ** 2 + (y - cy) ** 2 < r * r) return true;
+    if (cx + ex <= a || cx - ex >= b || cy + ey <= c || cy - ey >= d) continue;
+    const mx = (a + b) / 2, my = (c + d) / 2, hx = (b - a) / 2, hy = (d - c) / 2;
+    if (Math.abs((mx - cx) * fx + (my - cy) * fy) >= L + Math.abs(fx) * hx + Math.abs(fy) * hy) continue;
+    if (Math.abs((mx - cx) * qx + (my - cy) * qy) >= Hw + Math.abs(qx) * hx + Math.abs(qy) * hy) continue;
+    return true;
   }
   return false;
 }
+// Forward speed of each drive wheel, in wheel degrees per second.
 function motion(me) {
-  const fA = me.A, fB = -me.B;
-  return [(fA + fB) / 2 / 360 * Math.PI * P.wheelDiameter, (fA - fB) / 2 * (P.wheelDiameter / P.trackWidth)];
+  const fR = (me.vel[P.rightMotorPort] || 0) * P.rightMotorForward;
+  const fL = (me.vel[P.leftMotorPort] || 0) * P.leftMotorForward;
+  return [(fR + fL) / 2 / 360 * Math.PI * P.wheelDiameter, (fR - fL) / 2 * (P.wheelDiameter / P.trackWidth)];
 }
 function addPath(me) {
   const last = me.path[me.path.length - 1];
   if (Math.hypot(me.x - last[0], me.y - last[1]) > 0.8) me.path.push([me.x, me.y]);
 }
 function physics(me, dt) {
+  const L = P.leftMotorPort, R = P.rightMotorPort;
+  for (const p of 'ABCDEF') if (p !== L && p !== R) me.pos[p] += me.vel[p] * dt;   // other motors turn freely
   const [v, w] = motion(me);
   if (v === 0 && w === 0) return;
-  if (Math.abs(v) < 1e-9) { me.h = wrap(me.h + w * dt); me.posA += me.A * dt; me.posB += me.B * dt; return; }
+  // Turning on the spot can hit things too: the back of the rover swings round.
   const nh = wrap(me.h + w * dt), r = rad(nh);
   const nx = me.x - Math.sin(r) * v * dt, ny = me.y + Math.cos(r) * v * dt;
-  if (collides(nx, ny)) return;
-  me.x = nx; me.y = ny; me.h = nh; me.posA += me.A * dt; me.posB += me.B * dt;
+  if (collides(nx, ny, nh)) return;
+  me.x = nx; me.y = ny; me.h = nh; me.pos[L] += me.vel[L] * dt; me.pos[R] += me.vel[R] * dt;
   addPath(me);
 }
 function castRay(px, py, ang) {
@@ -497,21 +710,23 @@ function castRay(px, py, ang) {
   return best;
 }
 const hub = {
-  run(p, v) { S[p] = v; },
+  run(p, v) { S.vel[p] = v; },
   stop(p) {
-    if ((p === 'A' || p === 'B') && S.A !== 0 && S.B !== 0) {
+    const L = P.leftMotorPort, R = P.rightMotorPort;
+    if ((p === L || p === R) && S.vel[L] !== 0 && S.vel[R] !== 0) {
       const [v, w] = motion(S);
-      S.h = wrap(S.h + w * P.turnMomentum);
+      const nh = wrap(S.h + w * P.turnMomentum);
+      if (!collides(S.x, S.y, nh)) S.h = nh;
       if (v !== 0) {
         const r = rad(S.h), d = v * P.driveMomentum;
         const nx = S.x - Math.sin(r) * d, ny = S.y + Math.cos(r) * d;
-        if (!collides(nx, ny)) { S.x = nx; S.y = ny; addPath(S); }
+        if (!collides(nx, ny, S.h)) { S.x = nx; S.y = ny; addPath(S); }
       }
     }
-    S[p] = 0;
+    S.vel[p] = 0;
   },
-  relPos(p) { return Math.trunc(S['pos' + p] || 0); },
-  resetRelPos(p, v) { S['pos' + p] = v; },
+  relPos(p) { return Math.trunc(S.pos[p] || 0); },
+  resetRelPos(p, v) { S.pos[p] = v; },
   tiltYaw() { return Math.round(wrap(S.h - S.yawOff) * 10); },
   resetYaw(v) { S.yawOff = S.h - (v || 0); },
   distance() {
@@ -546,14 +761,13 @@ const hub = {
 
 /* ===================== Log ===================== */
 function kindOf(text) {
-  if (text.startsWith('drive_leg')) return text.includes(' distance ') ? 'leg' : 'block';
-  if (text.startsWith('[turn')) return 'decision';
-  if (text.startsWith('turn_to_yaw') || text.startsWith('turn_left') || text.startsWith('turn_right')) return 'turn';
-  if (text.startsWith('look:') || text.startsWith('radar') || text.startsWith('[room]') || /^\[-?\d/.test(text)) return 'radar';
-  if (/^(detour|main|wall_follow|explore:|STATE_)/.test(text)) return 'decision';
-  if (text.startsWith('CHECKPOINT') || text.startsWith('COLOUR')) return 'checkpoint';
-  if (text.startsWith('GOAL') || text.startsWith('RED:') || text.startsWith('=== RUN COMPLETE')) return 'goal';
-  if (text.startsWith('ERROR') || text.startsWith('WARNING') || text.startsWith('Traceback')) return 'error';
+  if (text.startsWith('step:')) return text.includes(' done') ? 'leg' : 'block';
+  if (text.startsWith('drive:') || text.startsWith('turn:')) return 'turn';
+  if (text.startsWith('look:') || text.startsWith('wall check')) return 'radar';
+  if (/^(explore:|follow:|map \||=== (EXPLORER|WALL FOLLOWER|SETUP))/.test(text)) return 'decision';
+  if (text.startsWith('COLOUR')) return 'checkpoint';
+  if (text.startsWith('=== RUN FINISHED')) return 'goal';
+  if (text.startsWith('ERROR') || text.startsWith('WARNING') || text.startsWith('Traceback') || text.includes('PROBLEM')) return 'error';
   return 'info';
 }
 function log(text, forceKind) {
@@ -562,9 +776,9 @@ function log(text, forceKind) {
   for (const line of String(text).split('\n')) {
     const entry = { t: me.t, text: line, kind: forceKind || kindOf(line), pose: [me.x, me.y, me.h] };
     me.log.push(entry);
-    if (line.startsWith('drive_leg')) { me.legs++; if (!line.includes(' distance ')) me.blockedLegs++; }
-    if (line.startsWith('radar_sweep: done')) me.sweeps++;
-    if (line.startsWith('CHECKPOINT') && line.includes('found')) me.greenDone = true;
+    if (line.startsWith('step:')) { me.legs++; if (!line.includes(' done')) me.blockedLegs++; }
+    if (line.startsWith('look:')) me.sweeps++;
+    if (line.startsWith('COLOUR: found ')) me.found.push(line.slice(14).split(',')[0]);
     appendLog(entry, me.log.length - 1);
   }
   if (ctl.stepMode) { ctl.stepMode = false; ctl.paused = true; syncControls(); }
@@ -600,7 +814,12 @@ window.simBridge = {
   motorStop: p => hub.stop(p),
   relPos: p => hub.relPos(p),
   resetRelPos: (p, v) => hub.resetRelPos(p, Number(v)),
-  motorVel: p => (S && S[p]) || 0,
+  motorVel: p => (S && S.vel[p]) || 0,
+  setDrivePorts: (l, r) => {
+    if (P.leftMotorPort === l && P.rightMotorPort === r) return;
+    P.leftMotorPort = l; P.rightMotorPort = r;
+    log('(simulator) drive motors set to port ' + l + ' (left) and port ' + r + ' (right), from motor_pair.pair', 'info');
+  },
   distance: () => hub.distance(),
   color: () => hub.color(),
   tiltYaw: () => hub.tiltYaw(),
@@ -633,8 +852,8 @@ function onProgramDone(err) {
   if (!me || me.cancelled || err === 'cancelled') return;
   if (me.timedOut) { me.status = 'timeout'; log('ERROR: simulation time limit of ' + P.timeLimit + ' s reached', 'error'); }
   else if (err) { me.status = 'error'; log(err.trimEnd(), 'error'); }
-  else me.status = me.log.some(e => e.text.startsWith('GOAL')) ? 'goal' : 'stopped';
-  S.A = 0; S.B = 0;
+  else me.status = 'goal';     // the program ended by itself
+  for (const p of 'ABCDEF') S.vel[p] = 0;
   ctl.paused = false; ctl.stepMode = false;
   takeSnapshot();
   syncControls();
@@ -695,8 +914,17 @@ $('srcPath').addEventListener('change', () => { fileHandle = null; pickedFile = 
 const CONST_RE = /^([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*(True|False|-?\d+(?:\.\d+)?)\b/;
 let overrides = load('overrides') || {};
 function parseConstants(src) {
+  // Only the SETTINGS block, when the file has one: the names above it (like
+  // NORTH) and the numbers inside the code are not meant to be changed.
+  let lines = src.split('\n');
+  const at = lines.findIndex(l => /^# SETTINGS\b/.test(l));
+  if (at >= 0) {
+    const rest = lines.slice(at + 2);
+    const end = rest.findIndex(l => /^# ={10,}/.test(l));
+    lines = end >= 0 ? rest.slice(0, end) : rest;
+  }
   const out = [];
-  src.split('\n').forEach(line => { const m = CONST_RE.exec(line); if (m) out.push({ name: m[1], value: m[2] }); });
+  lines.forEach(line => { const m = CONST_RE.exec(line); if (m) out.push({ name: m[1], value: m[2] }); });
   return out;
 }
 function parseEntries(src) {
@@ -788,7 +1016,7 @@ function syncControls() {
   $('btnPause').disabled = !active;
   $('btnPause').textContent = ctl.paused ? 'Resume' : 'Pause';
   if (!pyodide) return;
-  const label = { running: ctl.paused ? 'Paused' : 'Running', goal: 'Goal reached', stopped: 'Stopped', error: 'Error', timeout: 'Time limit' };
+  const label = { running: ctl.paused ? 'Paused' : 'Running', goal: 'Finished', stopped: 'Stopped', error: 'Error', timeout: 'Time limit' };
   if (S) setStatusChip(label[S.status], 's-' + (S.status === 'running' && ctl.paused ? 'paused' : S.status));
   else setStatusChip('Ready', '');
   document.querySelectorAll('.tools button').forEach(b => { b.disabled = active && b.dataset.tool !== 'none'; });
@@ -798,16 +1026,21 @@ function syncControls() {
 function buildPhys() {
   const saved = load('phys') || {};
   const host = $('physParams'); host.innerHTML = '';
-  for (const [key, def, help] of PHYS_PARAMS) {
+  for (const [key, def, help, options] of PHYS_PARAMS) {
     const row = document.createElement('div'); row.className = 'prow';
     const lab = document.createElement('label'); lab.htmlFor = 'p-' + key; lab.textContent = key;
-    const inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; inp.id = 'p-' + key;
+    let inp;
+    if (options) {
+      inp = document.createElement('select');
+      for (const o of options) { const op = document.createElement('option'); op.value = String(o); op.textContent = String(o); inp.appendChild(op); }
+    } else { inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; }
+    inp.id = 'p-' + key;
     inp.dataset.key = key; inp.dataset.def = def; inp.value = key in saved ? saved[key] : def;
     const h = document.createElement('div'); h.className = 'help'; h.textContent = help;
-    const mark = () => row.classList.toggle('changed', Number(inp.value) !== def);
-    inp.addEventListener('input', () => {
+    const mark = () => row.classList.toggle('changed', String(inp.value) !== String(def));
+    inp.addEventListener(options ? 'change' : 'input', () => {
       mark();
-      const o = {}; host.querySelectorAll('input').forEach(i => { if (i.value !== '' && Number(i.value) !== Number(i.dataset.def)) o[i.dataset.key] = Number(i.value); });
+      const o = {}; host.querySelectorAll('input, select').forEach(i => { if (i.value !== '' && String(i.value) !== String(i.dataset.def)) o[i.dataset.key] = i.value; });
       store('phys', o);
       if (!isActive()) readPhys();
     });
@@ -815,7 +1048,11 @@ function buildPhys() {
   }
 }
 function readPhys() {
-  document.querySelectorAll('#physParams input').forEach(i => { const v = Number(i.value); P[i.dataset.key] = i.value !== '' && Number.isFinite(v) ? v : Number(i.dataset.def); });
+  document.querySelectorAll('#physParams input, #physParams select').forEach(i => {
+    const key = i.dataset.key;
+    if (key.endsWith('Port')) { P[key] = i.value || i.dataset.def; return; }
+    const v = Number(i.value); P[key] = i.value !== '' && Number.isFinite(v) ? v : Number(i.dataset.def);
+  });
 }
 $('btnParamReset').addEventListener('click', () => {
   overrides = {}; store('overrides', overrides); store('phys', {});
@@ -828,7 +1065,6 @@ function courseChanged() {
   store('course', course);
   $('courseJson').value = formatCourse(course);
   if (S && !isActive()) { S = null; clearLog(); syncControls(); }
-  fitView();
 }
 function formatCourse(c) {
   const walls = c.walls.map(w => '    ' + JSON.stringify(w.map(round1))).join(',\n');
@@ -844,7 +1080,7 @@ function validCourse(c) {
   return '';
 }
 function setMsg(text, kind) { const m = $('jsonMsg'); m.textContent = text; m.className = 'msg ' + kind; }
-$('btnPreset').addEventListener('click', () => { if (isActive()) resetRun(); course = clone(PRESETS[$('preset').value]); courseChanged(); setMsg('Loaded the preset.', 'ok'); });
+$('btnPreset').addEventListener('click', () => { if (isActive()) resetRun(); course = clone(PRESETS[$('preset').value]); courseChanged(); fitView(); setMsg('Loaded the preset.', 'ok'); });
 $('btnClearWalls').addEventListener('click', () => { if (isActive()) resetRun(); course.walls = []; courseChanged(); setMsg('Removed all walls.', 'ok'); });
 $('btnApplyJson').addEventListener('click', () => {
   let c;
@@ -855,7 +1091,7 @@ $('btnApplyJson').addEventListener('click', () => {
   if (err) { setMsg(err, 'bad'); return; }
   if (isActive()) resetRun();
   course = { walls: c.walls, green: c.green, red: c.red, start: c.start };
-  courseChanged(); setMsg('Applied the course.', 'ok');
+  courseChanged(); fitView(); setMsg('Applied the course.', 'ok');
 });
 $('btnCopyJson').addEventListener('click', () => {
   const ta = $('courseJson');
@@ -865,11 +1101,11 @@ $('btnCopyJson').addEventListener('click', () => {
 
 /* ===================== Canvas ===================== */
 const cv = $('cv'), ctx = cv.getContext('2d');
-let view = { k: 1, ox: 0, oy: 0, minX: 0, maxY: 0, dpr: 1 };
+let view = { k: 1, ox: 0, oy: 0, minX: 0, maxY: 0, dpr: 1, w: 0, h: 0, ready: false };
 const colors = {};
 function readColors() {
   const cs = getComputedStyle(document.documentElement);
-  for (const n of ['floor', 'grid', 'grid-major', 'wall', 'wall-edge', 'path', 'sonar', 'green', 'red', 'ink', 'muted', 'raised', 'accent', 'k-decision', 'k-block'])
+  for (const n of ['floor', 'off-floor', 'grid', 'grid-major', 'wall', 'wall-edge', 'path', 'sonar', 'green', 'red', 'ink', 'muted', 'raised', 'accent', 'k-decision', 'k-block'])
     colors[n] = cs.getPropertyValue('--' + n).trim();
 }
 readColors();
@@ -880,23 +1116,64 @@ function courseBounds() {
   course.walls.forEach(add); add(course.green); add(course.red);
   return [x0 - 14, x1 + 14, y0 - 14, y1 + 14];
 }
-function fitView() {
+/* The floor is 10 m by 10 m, centred on (0, 0). The view can zoom out to
+   show all of it, and never moves off it. Editing the course leaves the
+   view alone; loading a course or pressing Fit course fits it. */
+const FLOOR = 500;           // half the floor size, cm
+const K_MAX = 25;            // most zoomed in, px per cm
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const kMin = () => Math.min(view.w, view.h) / (2 * FLOOR + 40);
+function setView(cx, cy, k) {        // centre the view on (cx, cy) cm at k px per cm
+  if (!view.w || !view.h) return;
+  k = clamp(k, kMin(), K_MAX);
+  cx = clamp(cx, -FLOOR, FLOOR); cy = clamp(cy, -FLOOR, FLOOR);
+  Object.assign(view, { k, ox: 0, oy: 0, minX: cx - view.w / 2 / k, maxY: cy + view.h / 2 / k, ready: true });
+}
+const viewCentre = () => [view.minX + view.w / 2 / view.k, view.maxY - view.h / 2 / view.k];
+function sizeCanvas() {
   const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
   if (!w || !h) return;
+  const keep = view.ready ? viewCentre() : null;
   cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
-  const [x0, x1, y0, y1] = courseBounds();
-  const k = Math.min(w / (x1 - x0), h / (y1 - y0));
-  view = { k, dpr, ox: (w - (x1 - x0) * k) / 2, oy: (h - (y1 - y0) * k) / 2, minX: x0, maxY: y1 };
+  Object.assign(view, { dpr, w, h });
+  if (keep) setView(keep[0], keep[1], view.k); else fitView();
 }
-new ResizeObserver(fitView).observe($('stage'));
+function fitView() {                 // fit the course, showing at least 2.5 m
+  if (!view.w || !view.h) return;
+  const [x0, x1, y0, y1] = courseBounds();
+  setView((x0 + x1) / 2, (y0 + y1) / 2, Math.min(view.w / Math.max(x1 - x0, 250), view.h / Math.max(y1 - y0, 250)));
+}
+function zoomAt(px, py, factor) {    // zoom, keeping the point under (px, py) still
+  const [wx, wy] = toWorld(px, py);
+  const k = clamp(view.k * factor, kMin(), K_MAX);
+  setView(wx + (view.w / 2 - px) / k, wy - (view.h / 2 - py) / k, k);
+}
+new ResizeObserver(sizeCanvas).observe($('stage'));
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), dy = e.deltaY * (e.deltaMode === 1 ? 33 : 1);
+  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-dy * 0.0015));
+}, { passive: false });
+$('btnZoomIn').addEventListener('click', () => zoomAt(view.w / 2, view.h / 2, 1.5));
+$('btnZoomOut').addEventListener('click', () => zoomAt(view.w / 2, view.h / 2, 1 / 1.5));
+$('btnFit').addEventListener('click', fitView);
+$('btnFloor').addEventListener('click', () => setView(0, 0, 0));
 const sx = x => view.ox + (x - view.minX) * view.k;
 const sy = y => view.oy + (view.maxY - y) * view.k;
 const toWorld = (px, py) => [view.minX + (px - view.ox) / view.k, view.maxY - (py - view.oy) / view.k];
 const rectPath = r => ctx.rect(sx(r[0]), sy(r[3]), (r[1] - r[0]) * view.k, (r[3] - r[2]) * view.k);
 
+function drawFloor() {
+  ctx.fillStyle = colors['off-floor']; ctx.fillRect(0, 0, view.w, view.h);
+  ctx.fillStyle = colors.floor; ctx.fillRect(sx(-FLOOR), sy(FLOOR), 2 * FLOOR * view.k, 2 * FLOOR * view.k);
+}
 function drawGrid() {
-  const [x0, x1, y0, y1] = courseBounds();
-  for (const [step, col] of [[10, colors.grid], [50, colors['grid-major']]]) {
+  // Only the part of the floor in view; skip grid lines too dense to read.
+  const [vx0, vy1] = toWorld(0, 0), [vx1, vy0] = toWorld(view.w, view.h);
+  const x0 = Math.max(vx0, -FLOOR), x1 = Math.min(vx1, FLOOR), y0 = Math.max(vy0, -FLOOR), y1 = Math.min(vy1, FLOOR);
+  if (x0 >= x1 || y0 >= y1) return;
+  for (const [step, col] of [[10, colors.grid], [50, colors['grid-major']], [100, colors['grid-major']]]) {
+    if (step * view.k < 7) continue;
     ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath();
     for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) { ctx.moveTo(sx(x), sy(y0)); ctx.lineTo(sx(x), sy(y1)); }
     for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) { ctx.moveTo(sx(x0), sy(y)); ctx.lineTo(sx(x1), sy(y)); }
@@ -904,11 +1181,13 @@ function drawGrid() {
   }
 }
 function drawScale() {
-  const bx = 14, by = cv.clientHeight - 16, len = 50 * view.k;
+  let cm = 10;
+  for (const c of [10, 20, 50, 100, 200, 500]) if (c * view.k <= 160) cm = c;
+  const bx = 14, by = cv.clientHeight - 16, len = cm * view.k;
   ctx.strokeStyle = colors.ink; ctx.lineWidth = 2; ctx.beginPath();
   ctx.moveTo(bx, by); ctx.lineTo(bx + len, by); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4); ctx.moveTo(bx + len, by - 4); ctx.lineTo(bx + len, by + 4);
   ctx.stroke();
-  ctx.fillStyle = colors.ink; ctx.font = '600 12px "IBM Plex Mono", monospace'; ctx.fillText('50 cm', bx + len + 6, by + 4);
+  ctx.fillStyle = colors.ink; ctx.font = '600 12px "IBM Plex Mono", monospace'; ctx.fillText(cm >= 100 ? cm / 100 + ' m' : cm + ' cm', bx + len + 6, by + 4);
 }
 function drawPatch(r, col, label) {
   if (!r) return;
@@ -917,11 +1196,11 @@ function drawPatch(r, col, label) {
   if ((r[1] - r[0]) * view.k > 46) ctx.fillText(label, sx(r[0]) + 5, sy(r[3]) + 14);
 }
 function drawCourse() {
-  drawPatch(course.green, colors.green, 'CHECKPOINT');
-  drawPatch(course.red, colors.red, 'GOAL');
+  drawPatch(course.green, colors.green, 'GREEN');
+  drawPatch(course.red, colors.red, 'RED');
   ctx.fillStyle = colors.wall; ctx.strokeStyle = colors['wall-edge']; ctx.lineWidth = 1.5;
   for (const w of course.walls) { ctx.beginPath(); rectPath(w); ctx.fill(); ctx.stroke(); }
-  const [x, y] = course.start, s = Math.max(6, (P.bodyRadius || 8) * view.k);
+  const [x, y] = course.start, s = Math.max(6, (P.bodyWidth || 15) / 2 * view.k);
   ctx.strokeStyle = colors.muted; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(sx(x), sy(y), s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   ctx.beginPath(); ctx.moveTo(sx(x), sy(y) - s - 6); ctx.lineTo(sx(x) - 5, sy(y) - s + 2); ctx.lineTo(sx(x) + 5, sy(y) - s + 2); ctx.closePath();
@@ -942,7 +1221,7 @@ function drawMap() {
   ctx.stroke();
   ctx.lineWidth = 3; ctx.globalAlpha = 0.9; ctx.beginPath();
   const stepOf = yaw => yaw === 0 ? [0, 1] : yaw === 90 ? [-1, 0] : (yaw === 180 || yaw === -180) ? [0, -1] : [1, 0];
-  for (const [c, yaw] of sn.closed) {
+  for (const [c, yaw] of sn.blocked) {
     const dir = stepOf(yaw), [x, y] = centre(c);
     const mx = x + dir[0] * k * 0.45, my = y + dir[1] * k * 0.45, px = -dir[1] * k * 0.35, py = dir[0] * k * 0.35;
     ctx.moveTo(sx(mx - px), sy(my - py)); ctx.lineTo(sx(mx + px), sy(my + py));
@@ -959,13 +1238,14 @@ function drawMap() {
   }
 }
 function drawRover(x, y, h, ghost) {
-  const R = (P.bodyRadius || 8) * view.k;
+  // Drawn around the middle of the wheels, front pointing up before rotation.
+  const k = view.k, Fr = (P.bodyFront || 7) * k, Bk = (P.bodyBack || 11) * k, Hw = (P.bodyWidth || 15) / 2 * k;
   ctx.save(); ctx.translate(sx(x), sy(y)); ctx.rotate(-rad(h));
   ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(-R, -R, 2 * R, 2 * R, Math.min(4, R * 0.35)); else ctx.rect(-R, -R, 2 * R, 2 * R);
+  if (ctx.roundRect) ctx.roundRect(-Hw, -Fr, 2 * Hw, Fr + Bk, Math.min(4, Hw * 0.35)); else ctx.rect(-Hw, -Fr, 2 * Hw, Fr + Bk);
   if (ghost) { ctx.setLineDash([4, 3]); ctx.strokeStyle = colors['k-decision']; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
   else { ctx.fillStyle = colors.raised; ctx.fill(); ctx.strokeStyle = colors.ink; ctx.lineWidth = 2; ctx.stroke(); }
-  ctx.beginPath(); ctx.moveTo(0, -R - 5); ctx.lineTo(-5, -R + 3); ctx.lineTo(5, -R + 3); ctx.closePath();
+  ctx.beginPath(); ctx.moveTo(0, -Fr - 5); ctx.lineTo(-5, -Fr + 3); ctx.lineTo(5, -Fr + 3); ctx.closePath();
   ctx.fillStyle = ghost ? colors['k-decision'] : colors.ink; ctx.fill();
   if (!ghost) {
     ctx.fillStyle = colors.ink;
@@ -988,7 +1268,7 @@ function drawBeam(b) {
 let snapAt = 0, hudAt = 0;
 function draw() {
   ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
-  ctx.fillStyle = colors.floor; ctx.fillRect(0, 0, cv.clientWidth, cv.clientHeight);
+  drawFloor();
   drawGrid();
   drawCourse();
   const now = performance.now();
@@ -1020,9 +1300,9 @@ function draw() {
   if (now - hudAt > 120) {
     hudAt = now;
     $('hudTime').textContent = 't ' + (S ? (S.t / 1000).toFixed(1) : '0.0') + ' s';
-    $('hudLegs').textContent = 'legs ' + (S ? S.legs + (S.blockedLegs ? ' (' + S.blockedLegs + ' blocked)' : '') : 0);
-    $('hudSweeps').textContent = 'sweeps ' + (S ? S.sweeps : 0);
-    $('hudGreen').textContent = 'green: ' + (S && S.greenDone ? 'done' : 'not yet');
+    $('hudLegs').textContent = 'steps ' + (S ? S.legs + (S.blockedLegs ? ' (' + S.blockedLegs + ' blocked)' : '') : 0);
+    $('hudSweeps').textContent = 'looks ' + (S ? S.sweeps : 0);
+    $('hudGreen').textContent = 'colours: ' + (S && S.found.length ? S.found.join(', ') : 'none yet');
   }
   requestAnimationFrame(draw);
 }
@@ -1032,13 +1312,23 @@ let tool = 'none', drag = null;
 document.querySelectorAll('.tools button').forEach(b => b.addEventListener('click', () => {
   tool = b.dataset.tool;
   document.querySelectorAll('.tools button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
-  cv.style.cursor = tool === 'none' ? 'default' : 'crosshair';
+  cv.style.cursor = tool === 'none' ? 'grab' : 'crosshair';
 }));
+cv.style.cursor = 'grab';
+let pan = null;
 const snapv = v => $('snap').checked ? Math.round(v / 5) * 5 : round1(v);
-function eventWorld(e) { const r = cv.getBoundingClientRect(); return toWorld(e.clientX - r.left, e.clientY - r.top); }
+function eventWorld(e) {
+  const r = cv.getBoundingClientRect(), [x, y] = toWorld(e.clientX - r.left, e.clientY - r.top);
+  return [clamp(x, -FLOOR, FLOOR), clamp(y, -FLOOR, FLOOR)];
+}
 function dragRect() { const [ax, ay] = drag.a, [bx, by] = drag.b; return [Math.min(ax, bx), Math.max(ax, bx), Math.min(ay, by), Math.max(ay, by)]; }
 cv.addEventListener('pointerdown', e => {
-  if (tool === 'none') return;
+  if (tool === 'none' || e.button === 1) {
+    e.preventDefault();
+    pan = { x: e.clientX, y: e.clientY };
+    cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing';
+    return;
+  }
   if (isActive()) { $('hint').textContent = 'Press Reset to edit the course while a run is going.'; return; }
   const [x, y] = eventWorld(e);
   if (tool === 'start') { course.start = [snapv(x), snapv(y)]; courseChanged(); return; }
@@ -1053,11 +1343,18 @@ cv.addEventListener('pointerdown', e => {
   cv.setPointerCapture(e.pointerId);
 });
 cv.addEventListener('pointermove', e => {
+  if (pan) {
+    const [cx, cy] = viewCentre();
+    setView(cx - (e.clientX - pan.x) / view.k, cy + (e.clientY - pan.y) / view.k, view.k);
+    pan = { x: e.clientX, y: e.clientY };
+    return;
+  }
   const [x, y] = eventWorld(e);
   if (drag) drag.b = [snapv(x), snapv(y)];
   $('hint').textContent = 'x ' + n1(x) + ' cm · y ' + n1(y) + ' cm' + (tool === 'none' ? '' : ' · tool: ' + tool);
 });
 cv.addEventListener('pointerup', () => {
+  if (pan) { pan = null; cv.style.cursor = tool === 'none' ? 'grab' : 'crosshair'; return; }
   if (!drag) return;
   const r = dragRect(); drag = null;
   if (r[1] - r[0] < 1 || r[3] - r[2] < 1) return;
@@ -1100,7 +1397,7 @@ const savedTab = load('tab');
 if (savedTab && $(savedTab)) $(savedTab).click();
 buildPhys(); readPhys();
 $('courseJson').value = formatCourse(course);
-fitView();
+sizeCanvas();
 syncControls();
 requestAnimationFrame(draw);
 initPython();

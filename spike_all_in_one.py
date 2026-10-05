@@ -1,1107 +1,1429 @@
+# ======================================================================
+# ROVER SOFTWARE - All modules
+# ======================================================================
+# Version 1.0, built 2026-10-05 with: Setup, Movement, Distance sensor, Colour sensor, Wall follower, Maze explorer
+# Not included: nothing - everything is installed
+#
+# 1. Copy this whole file into a new Python project in the SPIKE App.
+# 2. Change the SETTINGS below to match your rover.
+# 3. Run setup_check (see YOUR PROGRAM at the bottom) and fix anything it reports.
+# 4. Choose your program at the bottom and run it.
+# The User Manual explains every setting and function.
+# ======================================================================
+
 import motor
 import distance_sensor
 import color_sensor
 import color
 import runloop
 import math
-from hub import port, motion_sensor
-try:
-    import time       # only for RUN_TIME_LIMIT_S
-except ImportError:
-    time = None
+import time
+from hub import port, motion_sensor, button
 
-# ============================================================
-#CONFIGURATION
-# ============================================================
-TARGET_HEADING    = 45
-MOVE_SPEED        = 400
-TURN_SPEED        = 200
-TURN_ANGLE        = 90
-WALL_THRESHOLD_CM = 15
-MOVE_BACKWARD_DURATION_MS= 500
-SCAN_PAUSE_MS     = 500
-HEADING_TOLERANCE = 20
-DEADBAND_CYCLES   = 2
+SOFTWARE_VERSION = "1.0"     # which version of the software this is
 
-SENSOR_MAX_CM      = 200   # what a -1 reading is worth when ranking
-ESCAPE_DURATION_MS = 1500  # longer than a normal step, to clear the obstacle
-REVERSE_CLEARANCE_CM = 35  # room needed behind before it is safe to reverse
-CLEARANCE_WEIGHT   = 0.6   # how much open space matters when choosing a direction
-HEADING_WEIGHT     = 0.4   # how much pointing at TARGET_HEADING matters
-SENSOR_POLL_MS     = 50    # how often to check the sensor while driving
-APPROACH_STOP_CM   = 10    # bail out of a move at this range; > WALL_THRESHOLD_CM
-                           # so there is room to brake before the wall
-DRIVE_LOG_MS       = 3000  # how often to log progress while driving
-                           # (logging no longer interrupts the drive)
+# Compass directions, as gyro headings. NORTH is the way the rover faced when
+# the program started. Turning left makes the number bigger.
+NORTH = 0
+NORTH_WEST = 45
+WEST = 90
+SOUTH_WEST = 135
+SOUTH = 180
+SOUTH_EAST = -135
+EAST = -90
+NORTH_EAST = -45
 
-# --- Turning to a room direction ---
-TURN_SLOW_SPEED = 100    # motor deg/s for the last TURN_SLOW_DEG of a turn
-TURN_SLOW_DEG   = 15     # how far from the target yaw to slow down
-TURN_TIMEOUT_MS = 5000   # give up on a turn that takes this long (stalled wheel)
 
-# --- Staircase legs ---
-LEG_ROTATIONS    = 1   # leg length in wheel rotations (~18 cm with 56 mm wheels).
-                       # Keep it shorter than the red patch (A4 short side is
-                       # 21 cm) or the staircase can step right over it.
-LEG_STUCK_FACTOR = 3   # a leg taking this many times its expected time is stuck
+# ======================================================================
+# SETTINGS - change these to match your rover and your course
+# ======================================================================
 
-# --- Staircase navigation ---
-# The rover starts square to the room facing "up"; that becomes yaw 0 and
-# fixes the four room directions for the whole run: up 0, left 90, down 180,
-# right -90. It only ever faces one of these.
-GOAL_YAWS       = [0, 90]     # up, left: the directions that lead to the star
-DETOUR_YAWS     = [-90, 180]  # right, down: only to get round an obstacle
-MAX_TRUSTED_CM  = 180   # no straight path here is over 2 m, so a reading above
-                        # this is a missed echo, NOT open space
-ROOM_WINDOW_DEG = 15    # radar slices within this of a room direction count for it
-MAX_DETOUR_LEGS = 6     # detour legs before sweeping again
-MAX_DETOURS     = 3     # failed detours in a row before giving up
+# ---- Setup ----
+# Which hub port each part is plugged into (port.A to port.F).
+LEFT_MOTOR_PORT = port.B
+RIGHT_MOTOR_PORT = port.A
+DISTANCE_SENSOR_PORT = port.C
+COLOUR_SENSOR_PORT = port.D
 
-# --- Maze exploration (explore) ---
-# The floor is mapped as a grid of cells one leg wide, starting at cell (0, 0)
-# with +x to the right and +y up. Cells it has not seen count as passable, so
-# the shortest route to the nearest unvisited cell always leads somewhere new;
-# blocked cells are never forgotten, so it cannot get stuck in a pocket.
-RED_NEEDS_GREEN     = True  # True: red only ends the run once green is done; red
-                            # seen earlier is remembered and revisited. False: red
-                            # always ends the run.
-RUN_TIME_LIMIT_S    = 0     # stop exploring after this many seconds; 0 = no limit
-WHEEL_DIAMETER_CM   = 5.6   # standard SPIKE wheel; sets the cell size (one leg)
-EXPLORE_LEFT_CM     = 220   # map limits, cm from the start. DOWN is 0 because the
-EXPLORE_RIGHT_CM    = 220   # start sits on the course edge - without a limit the
-EXPLORE_UP_CM       = 220   # rover would wander out through the entrance
-EXPLORE_DOWN_CM     = 0
-LOOK_MISS_CELLS     = 2     # a missed echo straight ahead still clears this many cells
-ROVER_RADIUS_CM     = 8     # half the rover's width: a cell whose centre is closer
-                            # than this to a wall can never be stood on
-LOOK_SETTLE_MS      = 150   # pause after turning before reading the distance
-TOUCH_WALLS         = True  # nose up to each wall met and back, so the colour sensor
-                            # covers the strip no cell centre reaches (patches often
-                            # sit against walls)
+# Which way each drive motor must spin to move the rover FORWARD: 1 or -1.
+# Motors mounted mirror-image on the two sides need opposite numbers.
+LEFT_MOTOR_DIRECTION = -1
+RIGHT_MOTOR_DIRECTION = 1
 
-# --- Radar sweep ---
-SWEEP_SPEED    = 150   # motor deg/s for the radar spin; slower = finer map
-SWEEP_POLL_MS  = 40    # time between samples during the spin
-SLICE_DEG      = 10    # angular width of one radar slice (36 slices per spin)
+WHEEL_DIAMETER_CM = 8.3        # measure across the tyre; setup_check fine-tunes it
 
-# --- Colour checkpoints ---
-# The sensor must be plugged into COLOR_PORT. A and B are the motors, C is the
-# distance sensor, so D is the first one free.
-COLOR_PORT          = port.D
-CHECKPOINT_COLOR    = color.GREEN  # stop once here (payload drop), then carry on
-GOAL_COLOR          = color.RED    # the star: the run ends here
-CHECKPOINT_PAUSE_MS = 2000         # how long to sit on the checkpoint
+# The size of the rover seen from above, in cm. Measure front and back from
+# the MIDDLE OF THE WHEELS (the line through the centres of the two wheels)
+# to the part that sticks out furthest.
+ROVER_WIDTH_CM = 15
+ROVER_FRONT_CM = 7
+ROVER_BACK_CM = 11
 
-# YAW SIGN CONVENTION - measured on this rover, do not guess:
-#   turning LEFT  makes yaw INCREASE (more positive)
-#   turning RIGHT makes yaw DECREASE (more negative)
-# A commanded 90 deg right turn ended at yaw -98.1. Every heading calculation
-# below follows this; flipping it silently inverts all steering.
+# Where the sensors sit along the rover, in cm from the middle of the wheels.
+# Positive = in front of the wheels, negative = behind them.
+DISTANCE_SENSOR_POSITION_CM = 7
+COLOUR_SENSOR_POSITION_CM = -10
 
-STATE_DRIVE = 0
-STATE_AVOID = 1
+# Which side of the hub faces up. motion_sensor.TOP means the hub lies flat
+# with its light matrix facing up. The others are motion_sensor.BOTTOM,
+# FRONT, BACK, LEFT and RIGHT. The gyro needs this to measure turns.
+HUB_FACE_UP = motion_sensor.TOP
 
-# Why a continuous drive segment ended.
-DRIVE_CONTINUE    = 0   # nothing happened, keep going
-DRIVE_OBSTACLE    = 1   # something came within stop_cm
-DRIVE_OFF_HEADING = 2   # drifted past the heading tolerance
-DRIVE_TIMEOUT     = 3   # ran for the full max_ms without incident
-DRIVE_DISTANCE    = 4   # the wheels covered the full max_deg
-DRIVE_NAMES = ["continue", "obstacle", "off-heading", "timeout", "distance"]
-# Colour is NOT a reason code: a checkpoint pauses in place and resumes the
-# manoeuvre in progress, and the goal raises GoalReached, which unwinds every
-# loop at once.
+MAX_RUN_SECONDS = 0            # end the run after this many seconds; 0 = no limit
 
-_target_heading = 0
+# ---- Movement ----
+DRIVE_SPEED = 400          # wheel speed when driving, degrees per second (max about 1000)
+DRIVE_SLOW_SPEED = 150     # wheel speed for the end of a drive, so it stops on the spot
+DRIVE_SLOW_ZONE_CM = 3     # slow down when this many cm from the end
+TURN_SPEED = 200           # wheel speed when turning
+TURN_SLOW_SPEED = 100      # wheel speed for the end of a turn, so it stops on target
+TURN_SLOW_ZONE = 15        # slow down when this many degrees from the target
+TURN_ACCURACY = 2          # a turn that ends further off than this many degrees is corrected
+TURN_NUDGE_SPEED = 30      # wheel speed for that correction
+STEERING = 10              # how strongly to steer back when drifting off course; 0 = off
+STUCK_MS = 1000            # no progress for this long while driving or turning = stuck
+TICK_MS = 20               # how often to check the sensors while moving, in ms
 
-# ============================================================
-#HEADING / GYRO FUNCTIONS
-# ============================================================
+# ---- Distance sensor ----
+MAX_TRUSTED_CM = 180   # readings further than this count as "no echo". In a course
+                       # where no straight path is over 2 m, a longer reading means
+                       # the sound missed, not that the way is clear.
+SETTLE_MS = 150        # wait this long after moving before a careful reading
 
-def set_heading(heading_degrees):
-    global _target_heading
-    _target_heading = heading_degrees
-    motion_sensor.reset_yaw(0)
-    print("set_heading: target=" + str(heading_degrees) + ", yaw reset")
+# ---- Colour sensor ----
+COLOURS_TO_FIND = [color.GREEN, color.RED]   # colours the rover reacts to
+COLOUR_PAUSE_MS = 5000     # how long to stop on a colour, in ms
+REACT_ONCE = True          # True: react to each colour only the first time it is found
 
-def get_heading():
-    return _target_heading
+# ---- Grid moves ----
+STEP_CM = 12            # size of one grid square, and the length of one step, in cm.
+                        # Smaller squares fit through narrower gaps but take longer.
+WALL_STOP_CM = 10       # a step stops early if the distance sensor sees a wall this close
+COURSE_NORTH_CM = 220   # how far the course reaches from the start in each direction.
+COURSE_SOUTH_CM = 0     # The rover never moves outside it. SOUTH is 0 when the start
+COURSE_EAST_CM = 220    # is on the edge of the course, so the rover cannot wander
+COURSE_WEST_CM = 220    # out through the entrance.
+CHECK_BY_WALLS = True   # also check the floor next to each wall the rover meets, which its
+                        # path through the middle of the squares never reaches. Slower.
+WALL_CHECK_GAP_CM = 5   # how close that check brings the front or back of the rover to the wall
 
-def get_current_yaw():
-    yaw = motion_sensor.tilt_angles()[0]
-    return yaw / 10
+# ---- Wall follower ----
+KEEP_WALL_ON_RIGHT = True   # True: keep the right hand on the wall. False: the left hand.
 
-# ============================================================
-#MOVEMENT FUNCTIONS
-# ============================================================
+# ---- Maze explorer ----
+HEAD_TOWARDS = None        # where to search first: NORTH, NORTH_EAST, EAST, SOUTH_EAST, SOUTH,
+                           # SOUTH_WEST, WEST, NORTH_WEST, or None for no preference
+HEAD_STRENGTH = 1          # how strongly to prefer HEAD_TOWARDS: how many extra steps the rover
+                           # will drive to reach a square one step further in that direction
+NO_ECHO_SQUARES = 2        # when a look gets no echo, count this many squares ahead as open
+
+
+# ======================================================================
+# SETUP
+# ======================================================================
+# Everything about how YOUR rover is built: which port each part is plugged
+# into, which way the motors face, the wheel size and where the sensors sit.
+# Every other module reads these settings, so get them right first.
+#
+#   setup_check()      run this first on a new rover - it tests each part, one
+#                      at a time, and tells you which setting to change if one
+#                      is wrong. The LEFT and RIGHT hub buttons move between tests.
+#   run_program(...)   starts a program (see YOUR PROGRAM at the bottom)
+#   end_run()          finish the whole run straight away, from anywhere
+
+# ---- Talking to the motors and the gyro ----
+
+def set_wheel_speeds(left, right):
+    """Spin the drive wheels. Speeds are in degrees per second, + = forward.
+
+    The MOTOR_DIRECTION settings take care of which way each motor faces,
+    so the rest of the program can simply say "forward" or "backward".
+    """
+    motor.run(LEFT_MOTOR_PORT, int(left * LEFT_MOTOR_DIRECTION))
+    motor.run(RIGHT_MOTOR_PORT, int(right * RIGHT_MOTOR_DIRECTION))
+
+
+def stop():
+    """Stop both drive wheels."""
+    motor.stop(LEFT_MOTOR_PORT)
+    motor.stop(RIGHT_MOTOR_PORT)
+
+
+def reset_wheel_counters():
+    """Start counting wheel turns from zero (see wheel_degrees)."""
+    motor.reset_relative_position(LEFT_MOTOR_PORT, 0)
+    motor.reset_relative_position(RIGHT_MOTOR_PORT, 0)
+
 
 def wheel_degrees():
-    """Degrees the drive wheels have turned since the last reset, either way.
+    """How far the wheels have turned since reset_wheel_counters(), in degrees.
 
-    Averages both wheels so a slight veer does not change the count, and uses
-    abs() because the motors are mounted opposed and count in opposite signs.
+    It is the average of both wheels, and always positive, whichever way the
+    rover went.
     """
-    return (abs(motor.relative_position(port.A))
-            + abs(motor.relative_position(port.B))) / 2
+    left = abs(motor.relative_position(LEFT_MOTOR_PORT))
+    right = abs(motor.relative_position(RIGHT_MOTOR_PORT))
+    return (left + right) / 2
 
 
-async def drive_until_event(speed, stop_cm, tolerance, max_ms=0, max_deg=0):
-    """Drive forward until something needs a decision. Motors stopped on return.
+def cm_to_wheel_degrees(cm):
+    """One full turn of a wheel (360 degrees) rolls the rover forward by the
+    wheel's circumference, which is pi x the diameter."""
+    return cm / (math.pi * WHEEL_DIAMETER_CM) * 360
 
-    This is the only forward-drive loop. It replaced a separate move_forward()
-    that duplicated the polling and had to be kept in sync by hand.
 
-    tolerance: heading error that ends the segment. Pass 181 - larger than any
-               value heading_difference can return - to ignore heading entirely,
-               which is what the escape manoeuvre and the deadband both want.
-    max_ms:    0 to run until an event; >0 to also stop after that much DRIVING
-               time and return DRIVE_TIMEOUT. Colour pauses do not count toward
-               it, so a bounded move still covers its full distance.
-    max_deg:   0 for no distance limit; >0 to stop once wheel_degrees() reaches
-               it and return DRIVE_DISTANCE.
+def wheel_degrees_to_cm(degrees):
+    return degrees / 360 * math.pi * WHEEL_DIAMETER_CM
 
-    Returns (reason, distance_cm).
+
+def gyro_heading():
+    """Which way the rover faces right now, in degrees, from the hub's gyro.
+
+    0 is the way it faced when the program started. Turning LEFT makes the
+    number bigger and turning RIGHT makes it smaller. It goes from -180 to 180.
     """
-    motor.reset_relative_position(port.A, 0)
-    motor.reset_relative_position(port.B, 0)
-    motor.run(port.A, abs(speed))
-    motor.run(port.B, -abs(speed))
-
-    reason = DRIVE_CONTINUE
-    cm = -1
-    elapsed = 0      # toward max_ms
-    since_log = 0    # toward the heartbeat; reset independently, or the
-                     # heartbeat would keep zeroing the duration cap
-    while True:
-        await runloop.sleep_ms(SENSOR_POLL_MS)
-        elapsed += SENSOR_POLL_MS
-        since_log += SENSOR_POLL_MS
-
-        cm = read_distance()
-        if cm != -1 and cm < stop_cm:
-            reason = DRIVE_OBSTACLE
-            break
-
-        await handle_color(abs(speed), -abs(speed))
-
-        diff = heading_difference(get_heading(), get_current_yaw())
-        if abs(diff) > tolerance:
-            reason = DRIVE_OFF_HEADING
-            break
-
-        if max_deg > 0 and wheel_degrees() >= max_deg:
-            reason = DRIVE_DISTANCE
-            break
-
-        if max_ms > 0 and elapsed >= max_ms:
-            reason = DRIVE_TIMEOUT
-            break
-
-        if since_log >= DRIVE_LOG_MS:
-            # Heartbeat only - keep rolling. Stopping the motors just to print
-            # a line was making the rover pause every few seconds on a clear
-            # path, which looked like a detection but was pure bookkeeping.
-            print("  still driving: yaw=" + str(get_current_yaw())
-                  + " dist=" + str(cm))
-            since_log = 0
-
-    motor.stop(port.A)
-    motor.stop(port.B)
-    return reason, cm
+    return motion_sensor.tilt_angles()[0] / 10
 
 
-async def move_backward(duration_ms, speed):
-    """Reverse for a fixed time, polling so a colour stop can interrupt it."""
-    print("move_backward: speed=" + str(speed) + " duration=" + str(duration_ms) + "ms")
-    motor.run(port.A, -abs(speed))
-    motor.run(port.B, abs(speed))
+def normalise(angle):
+    """Bring any angle into the range -180 to 180, so 270 becomes -90."""
+    while angle > 180:
+        angle -= 360
+    while angle <= -180:
+        angle += 360
+    return angle
 
-    elapsed = 0
-    while elapsed < duration_ms:
-        await runloop.sleep_ms(SENSOR_POLL_MS)
-        elapsed += SENSOR_POLL_MS
-        await handle_color(-abs(speed), abs(speed))
 
-    motor.stop(port.A)
-    motor.stop(port.B)
-    print("move_backward: done")
+def heading_difference(target, current):
+    """How far to turn from current to face target, the short way round.
 
-# ============================================================
-#TURNING FUNCTIONS
-# ============================================================
+    Positive = turn left, negative = turn right. From 170 to -170 is
+    20 degrees left, not 340 degrees right.
+    """
+    return normalise(target - current)
 
-async def turn_right(angle, speed):
-    if angle <= 0:
+
+# ---- Checking the settings ----
+# Before the rover moves, every module checks its own settings, so a typing
+# mistake gets a clear message instead of strange driving. Each module adds
+# its check to this list.
+
+SETTINGS_CHECKS = []
+settings_ok = True
+
+
+def setting_problem(message):
+    global settings_ok
+    print("SETTINGS PROBLEM: " + message)
+    settings_ok = False
+
+
+def check_number(name, value, low, high):
+    """Complain unless value is a number from low to high."""
+    if not isinstance(value, (int, float)) or value < low or value > high:
+        setting_problem(name + " is " + str(value) + ", but it should be a number from "
+                        + str(low) + " to " + str(high))
+
+
+def check_true_false(name, value):
+    """Complain unless value is True or False."""
+    if value is not True and value is not False:
+        setting_problem(name + " is " + str(value) + ", but it should be True or False")
+
+
+def check_setup_settings():
+    ports = [port.A, port.B, port.C, port.D, port.E, port.F]
+    used = [LEFT_MOTOR_PORT, RIGHT_MOTOR_PORT, DISTANCE_SENSOR_PORT, COLOUR_SENSOR_PORT]
+    for value in used:
+        if value not in ports:
+            setting_problem("every _PORT setting should be port.A to port.F")
+    if len(set(used)) < len(used):
+        setting_problem("two parts are set to the same port - check the _PORT settings")
+    if LEFT_MOTOR_DIRECTION != 1 and LEFT_MOTOR_DIRECTION != -1:
+        setting_problem("LEFT_MOTOR_DIRECTION is " + str(LEFT_MOTOR_DIRECTION) + ", but it should be 1 or -1")
+    if RIGHT_MOTOR_DIRECTION != 1 and RIGHT_MOTOR_DIRECTION != -1:
+        setting_problem("RIGHT_MOTOR_DIRECTION is " + str(RIGHT_MOTOR_DIRECTION) + ", but it should be 1 or -1")
+    check_number("WHEEL_DIAMETER_CM", WHEEL_DIAMETER_CM, 2, 20)
+    check_number("ROVER_WIDTH_CM", ROVER_WIDTH_CM, 5, 40)
+    check_number("ROVER_FRONT_CM", ROVER_FRONT_CM, 0, 40)
+    check_number("ROVER_BACK_CM", ROVER_BACK_CM, 0, 40)
+    check_number("DISTANCE_SENSOR_POSITION_CM", DISTANCE_SENSOR_POSITION_CM, -40, 40)
+    check_number("COLOUR_SENSOR_POSITION_CM", COLOUR_SENSOR_POSITION_CM, -40, 40)
+    check_number("MAX_RUN_SECONDS", MAX_RUN_SECONDS, 0, 3600)
+
+
+SETTINGS_CHECKS.append(check_setup_settings)
+
+
+# ---- Starting and finishing a run ----
+
+class RunFinished(Exception):
+    """end_run() raises this to stop the program from wherever it is."""
+
+
+def end_run():
+    """Finish the whole run straight away, from anywhere in your program."""
+    stop()
+    raise RunFinished()
+
+
+run_started_ms = 0
+
+
+def check_time_limit():
+    """End the run once MAX_RUN_SECONDS have passed. Every movement checks
+    this all the time, so the rover stops even in the middle of a move."""
+    if MAX_RUN_SECONDS > 0:
+        if time.ticks_diff(time.ticks_ms(), run_started_ms) > MAX_RUN_SECONDS * 1000:
+            print("Time limit of " + str(MAX_RUN_SECONDS) + " s reached")
+            end_run()
+
+
+async def run_program(program):
+    """Run one of the programs, from start to finish.
+
+    The rover must be standing still and facing the way you want to call
+    NORTH when this starts: the gyro sets its zero here.
+    """
+    global run_started_ms
+    print("=== ROVER SOFTWARE " + SOFTWARE_VERSION + " ===")
+    for check in SETTINGS_CHECKS:
+        check()
+    if not settings_ok:
+        print("Fix the settings above, then run the program again.")
         return
-    print("turn_right: angle=" + str(angle) + " speed=" + str(speed))
-    # Accumulate small per-sample deltas instead of comparing against a fixed
-    # start_yaw: tilt_angles() wraps at +/-180, and a raw difference taken
-    # across that boundary reads as ~315 deg and ends the turn instantly.
-    prev_yaw = motion_sensor.tilt_angles()[0] / 10
-    turned = 0
-    motor.run(port.A, -abs(speed))
-    motor.run(port.B, -abs(speed))
-    while turned < angle:
-        await runloop.sleep_ms(10)
-        if await handle_color(-abs(speed), -abs(speed)):
-            # Re-baseline: any yaw wander during the pause is not turning.
-            prev_yaw = motion_sensor.tilt_angles()[0] / 10
-        now_yaw = motion_sensor.tilt_angles()[0] / 10
-        turned += abs(heading_difference(now_yaw, prev_yaw))
-        prev_yaw = now_yaw
-    motor.stop(port.A)
-    motor.stop(port.B)
-    print("turn_right: done, turned " + str(turned) + " deg")
-
-async def turn_left(angle, speed):
-    if angle <= 0:
-        return
-    print("turn_left: angle=" + str(angle) + " speed=" + str(speed))
-    prev_yaw = motion_sensor.tilt_angles()[0] / 10
-    turned = 0
-    motor.run(port.A, abs(speed))
-    motor.run(port.B, abs(speed))
-    while turned < angle:
-        await runloop.sleep_ms(10)
-        if await handle_color(abs(speed), abs(speed)):
-            # Re-baseline: any yaw wander during the pause is not turning.
-            prev_yaw = motion_sensor.tilt_angles()[0] / 10
-        now_yaw = motion_sensor.tilt_angles()[0] / 10
-        turned += abs(heading_difference(now_yaw, prev_yaw))
-        prev_yaw = now_yaw
-    motor.stop(port.A)
-    motor.stop(port.B)
-    print("turn_left: done, turned " + str(turned) + " deg")
-
-async def turn_to_yaw(target):
-    """Turn the short way to an ABSOLUTE yaw, slowing for the last TURN_SLOW_DEG.
-
-    Steering to an absolute yaw rather than by a relative angle means any
-    overshoot gets corrected by the next turn instead of accumulating.
-    Left raises yaw (see the convention note at the top), so diff > 0 = left.
-    """
-    start = get_current_yaw()
-    diff = heading_difference(target, start)
-    if abs(diff) < 1:
-        return
-    direction = 1 if diff > 0 else -1    # +1 = left, -1 = right
-    # A small correction starts slow - no point lurching at full speed for it.
-    speed = TURN_SPEED if abs(diff) > TURN_SLOW_DEG else TURN_SLOW_SPEED
-    motor.run(port.A, direction * speed)
-    motor.run(port.B, direction * speed)
-    elapsed = 0
-    while True:
-        await runloop.sleep_ms(10)
-        elapsed += 10
-        await handle_color(direction * speed, direction * speed)
-        # Degrees still to go in the direction of travel: <= 0 once reached
-        # or passed. The > -90 guard matters for 180 deg turns: a twitch the
-        # wrong way at the start wraps 180 to -179.9, which is NOT "passed".
-        remaining = heading_difference(target, get_current_yaw()) * direction
-        if -90 < remaining <= 0:
-            break
-        if 0 < remaining < TURN_SLOW_DEG and speed != TURN_SLOW_SPEED:
-            speed = TURN_SLOW_SPEED
-            motor.run(port.A, direction * speed)
-            motor.run(port.B, direction * speed)
-        if elapsed >= TURN_TIMEOUT_MS:
-            print("turn_to_yaw: WARNING timed out - wheel stalled?")
-            break
-    motor.stop(port.A)
-    motor.stop(port.B)
-    print("turn_to_yaw: target=" + str(target) + " from=" + str(start)
-          + " stopped=" + str(get_current_yaw()))
-
-# ============================================================
-#DISTANCE SENSOR
-# ============================================================
-
-def read_distance():
-    """Silent distance read in cm, -1 if nothing in range.
-
-    Used by the drive loop, which polls every SENSOR_POLL_MS - printing at
-    that rate would flood the console and slow the loop enough to matter.
-    """
-    dist = distance_sensor.distance(port.C)
-    if dist is None or dist < 0:
-        return -1
-    return dist / 10
-
-def measure_distance():
-    """Distance read with logging, for the once-per-decision calls."""
-    cm = read_distance()
-    if cm == -1:
-        print("measure_distance: no reading")
-    else:
-        print("measure_distance: " + str(cm) + " cm")
-    return cm
-
-# ============================================================
-#COLOUR SENSOR
-# ============================================================
-
-class GoalReached(Exception):
-    """Raised from any movement loop when GOAL_COLOR is read. Ends the run."""
-
-
-# ONE-SHOT: the checkpoint pauses once per run, so driving off the patch and
-# back on (or a later patch of the same colour) does not deploy twice. The
-# goal has no latch - it ends the run the first time it is seen.
-_checkpoint_done = False
-_color_warned = False
-_red_seen = False   # red was under the sensor before green (RED_NEEDS_GREEN only)
-
-
-def read_color():
-    """Current colour under the sensor, or None if the sensor is missing.
-
-    A missing sensor must not raise mid-drive: an unhandled exception in the
-    drive loop would leave the motors running.
-    """
-    global _color_warned
+    motion_sensor.set_yaw_face(HUB_FACE_UP)
+    motion_sensor.reset_yaw(0)
+    run_started_ms = time.ticks_ms()
     try:
-        return color_sensor.color(COLOR_PORT)
-    except Exception:
-        if not _color_warned:
-            print("WARNING: no colour sensor on COLOR_PORT - colour stops disabled")
-            _color_warned = True
-        return None
+        await program()
+    except RunFinished:
+        pass
+    stop()
+    print("=== RUN FINISHED ===")
 
 
-async def handle_color(a_velocity, b_velocity):
-    """Read the floor colour and act on it. Returns True if it paused.
+# ---- Colour names, for printing ----
+# The SPIKE library spells it "color"; this program uses "colour" in its own names.
 
-    Every movement loop calls this with its own motor velocities, so the
-    colours behave the same whether the rover is driving, reversing or
-    turning:
-      GOAL_COLOR       - stop the motors and raise GoalReached, which unwinds
-                         every loop straight back to run_program(). If
-                         RED_NEEDS_GREEN and green is not done yet, just note
-                         it in _red_seen and carry on.
-      CHECKPOINT_COLOR - first time only: stop, wait, then resume with the
-                         velocities passed in, so the manoeuvre carries on
-                         from where it was interrupted.
-    """
-    global _checkpoint_done, _red_seen
-    c = read_color()
-    if c == GOAL_COLOR:
-        if _checkpoint_done or not RED_NEEDS_GREEN:
-            motor.stop(port.A)
-            motor.stop(port.B)
-            print("GOAL: red found")
-            raise GoalReached()
-        if not _red_seen:
-            print("RED: seen before green - remembering it, carrying on")
-        _red_seen = True
-    if c == CHECKPOINT_COLOR and not _checkpoint_done:
-        _checkpoint_done = True
-        motor.stop(port.A)
-        motor.stop(port.B)
-        print("CHECKPOINT: green found, pausing " + str(CHECKPOINT_PAUSE_MS) + "ms")
-        # Payload deployment goes here once it exists.
-        await runloop.sleep_ms(CHECKPOINT_PAUSE_MS)
-        print("CHECKPOINT: resuming")
-        motor.run(port.A, a_velocity)
-        motor.run(port.B, b_velocity)
-        return True
+COLOUR_NAMES = {
+    color.BLACK: "BLACK", color.MAGENTA: "MAGENTA", color.PURPLE: "PURPLE",
+    color.BLUE: "BLUE", color.AZURE: "AZURE", color.TURQUOISE: "TURQUOISE",
+    color.GREEN: "GREEN", color.YELLOW: "YELLOW", color.ORANGE: "ORANGE",
+    color.RED: "RED", color.WHITE: "WHITE",
+}
+
+
+def colour_name(colour):
+    """The name of a colour, e.g. colour_name(color.GREEN) gives "GREEN"."""
+    if colour in COLOUR_NAMES:
+        return COLOUR_NAMES[colour]
+    return "NONE"
+
+
+# ---- Setup check: run this first on a new rover ----
+# It runs one test at a time and waits for you between tests, using the
+# LEFT and RIGHT buttons on the hub (the middle button stops the program).
+# Read what to look for in the console in the SPIKE App.
+
+async def wait_for_button():
+    """Wait until LEFT or RIGHT is pressed and let go. Returns "left" or "right"."""
+    # First make sure no button is still held, so one press only counts once.
+    while button.pressed(button.LEFT) or button.pressed(button.RIGHT):
+        await runloop.sleep_ms(20)
+    while True:
+        if button.pressed(button.LEFT):
+            choice = "left"
+            break
+        if button.pressed(button.RIGHT):
+            choice = "right"
+            break
+        await runloop.sleep_ms(20)
+    while button.pressed(button.LEFT) or button.pressed(button.RIGHT):
+        await runloop.sleep_ms(20)
+    return choice
+
+
+async def right_pressed_within(ms):
+    """Wait up to ms milliseconds, but stop early and return True if RIGHT is pressed."""
+    waited = 0
+    while waited < ms:
+        if button.pressed(button.RIGHT):
+            return True
+        await runloop.sleep_ms(20)
+        waited += 20
     return False
 
 
-# ============================================================
-#NAVIGATION HELPERS
-# ============================================================
-
-def heading_difference(target, current):
-    diff = target - current
-    while diff > 180:
-        diff -= 360
-    while diff < -180:
-        diff += 360
-    return diff
-
-async def align_to_heading(target, tolerance=10):
-    current = get_current_yaw()
-    diff = heading_difference(target, current)
-    print("align_to_heading: target=" + str(target) + " current=" + str(current) + " diff=" + str(diff))
-    if abs(diff) <= tolerance:
-        print("align_to_heading: within tolerance, skip")
-        return
-    turn_amount = abs(diff)
-    # diff > 0 means the target yaw is HIGHER than current, and yaw rises when
-    # turning left. Having these swapped made every correction increase the
-    # error instead of reducing it.
-    if diff > 0:
-        await turn_left(turn_amount, TURN_SPEED)
-    else:
-        await turn_right(turn_amount, TURN_SPEED)
-
-# ============================================================
-#STAIRCASE LEGS
-# ============================================================
-
-async def drive_leg(yaw):
-    """Square up to a room direction, then drive one leg of LEG_ROTATIONS along it.
-
-    Returns (reason, distance_cm): DRIVE_DISTANCE when the full leg was
-    covered, DRIVE_OBSTACLE if something came within APPROACH_STOP_CM, or
-    DRIVE_TIMEOUT if the wheels did not get round in time (stuck).
-    """
-    await turn_to_yaw(yaw)
-    leg_deg = LEG_ROTATIONS * 360
-    expected_ms = leg_deg * 1000 // MOVE_SPEED
-    # tolerance 181 = ignore heading: turn_to_yaw has just squared it up, and
-    # a leg is too short to drift far.
-    reason, cm = await drive_until_event(MOVE_SPEED, APPROACH_STOP_CM, 181,
-                                         expected_ms * LEG_STUCK_FACTOR, leg_deg)
-    print("drive_leg: yaw=" + str(yaw) + " " + DRIVE_NAMES[reason]
-          + " wheel_deg=" + str(wheel_degrees()) + " dist=" + str(cm))
-    return reason, cm
-
-# ============================================================
-#RADAR
-# ============================================================
-
-async def radar_sweep():
-    """Spin 360 deg left once, sampling distance against measured yaw.
-
-    Returns (start_yaw, slices). slices[i] is the closest distance seen
-    between i*SLICE_DEG and (i+1)*SLICE_DEG LEFT of start_yaw, so its centre
-    is at yaw start_yaw + i*SLICE_DEG + SLICE_DEG/2. None means no sample
-    landed in that slice - the spin was too fast for the sensor.
-
-    Each sample is tagged with the yaw the gyro actually measured, so turn
-    overshoot cannot mislabel a reading the way it does in the 5-point scan.
-    """
-    slices = [None] * (360 // SLICE_DEG)
-    start_yaw = prev = get_current_yaw()
-    turned = 0
-    samples = 0
-    print("radar_sweep: start_yaw=" + str(start_yaw))
-    speed = SWEEP_SPEED
-    motor.run(port.A, speed)
-    motor.run(port.B, speed)
-    while turned < 360:
-        await runloop.sleep_ms(SWEEP_POLL_MS)
-        # Same end-of-turn slow-down as turn_to_yaw: momentum after stopping
-        # at full sweep speed carried it well past 360.
-        if 360 - turned < TURN_SLOW_DEG and speed != TURN_SLOW_SPEED:
-            speed = TURN_SLOW_SPEED
-            motor.run(port.A, speed)
-            motor.run(port.B, speed)
-        if await handle_color(speed, speed):
-            # Re-baseline: any yaw wander during the pause is not turning.
-            prev = get_current_yaw()
-        now = get_current_yaw()
-        turned += abs(heading_difference(now, prev))
-        prev = now
-
-        # -1 means nothing in range. Mapping it to SENSOR_MAX_CM BEFORE taking
-        # the min means any real echo in the slice beats a missed one.
-        cm = read_distance()
-        if cm == -1:
-            cm = SENSOR_MAX_CM
-        i = int(turned // SLICE_DEG) % len(slices)
-        if slices[i] is None or cm < slices[i]:
-            slices[i] = cm
-        samples += 1
-    motor.stop(port.A)
-    motor.stop(port.B)
-    print("radar_sweep: done, " + str(samples) + " samples over "
-          + str(turned) + " deg")
-    return start_yaw, slices
-
-
-def room_clearance(start_yaw, slices, yaw):
-    """Clearance in cm along an absolute room direction, from a radar map.
-
-    Takes the closest reading among the slices whose centre is within
-    ROOM_WINDOW_DEG of yaw - the flat dip a square-on wall makes. Returns
-    None if every one of them was over MAX_TRUSTED_CM: in this room that is a
-    missed echo, not open space.
-    """
-    best = None
-    for i in range(len(slices)):
-        centre = start_yaw + i * SLICE_DEG + SLICE_DEG / 2
-        if abs(heading_difference(centre, yaw)) > ROOM_WINDOW_DEG:
-            continue
-        cm = slices[i]
-        if cm is None or cm > MAX_TRUSTED_CM:
-            continue
-        if best is None or cm < best:
-            best = cm
-    return best
-
-# ============================================================
-#AVOID MANOEUVRE
-# ============================================================
-
-async def reverse_if_clear():
-    """Look behind, come back to the same heading, and reverse only if there is room.
-
-    The rover has no rear sensor, so the only way to find out is to turn
-    around and look. Reversing blind was an assumption that a wall behind
-    would quietly falsify.
-    """
-    heading_before = get_current_yaw()
-    print("reverse_if_clear: turning to check clearance behind")
-    await turn_left(180, TURN_SPEED)
-    await runloop.sleep_ms(SCAN_PAUSE_MS)
-    behind = measure_distance()
-
-    # Return by absolute heading rather than a second blind 180: turns
-    # overshoot 6-8 deg each, and align_to_heading goes the short way
-    # to a measured target instead of compounding that error.
-    print("reverse_if_clear: turning back to " + str(heading_before))
-    await align_to_heading(heading_before)
-    await runloop.sleep_ms(SCAN_PAUSE_MS)
-
-    # -1 means nothing in range, which is the CLEAREST case.
-    if behind == -1 or behind >= REVERSE_CLEARANCE_CM:
-        print("reverse_if_clear: " + str(behind) + " cm behind, reversing")
-        await move_backward(MOVE_BACKWARD_DURATION_MS, MOVE_SPEED)
-    else:
-        print("reverse_if_clear: only " + str(behind)
-              + " cm behind, skipping reverse")
-
-
-async def choose_escape_direction():
-    """Scan five directions, re-centre, and pick the best way out.
-
-    Returns the turn to make from the re-centred heading, in YAW space
-    (positive = left, see the convention note at the top): one of
-    90, 45, 0, -45, -90. Returns None if every direction is blocked.
-    """
-    # Measure 5 distances to choose direction
-    await runloop.sleep_ms(SCAN_PAUSE_MS)
-    dist_forward = measure_distance()
-
-    await turn_left(45, TURN_SPEED)
-    await runloop.sleep_ms(SCAN_PAUSE_MS)
-    dist_left_45 = measure_distance()
-
-    await turn_left(45, TURN_SPEED)
-    await runloop.sleep_ms(SCAN_PAUSE_MS)
-    dist_left_90 = measure_distance()
-
-    await turn_right(135, TURN_SPEED)
-    await runloop.sleep_ms(SCAN_PAUSE_MS)
-    dist_right_45 = measure_distance()
-
-    await turn_right(45, TURN_SPEED)
-    await runloop.sleep_ms(SCAN_PAUSE_MS)
-    dist_right_90 = measure_distance()
-
-    # Re-center rover
-    await turn_left(90, TURN_SPEED)
-
-    # --- Score each direction: clearance gates, heading tips ---
-    # -1 means "nothing in range" = the CLEAREST case, so it must map
-    # to a large number, not rank last.
-    readings = [dist_left_90, dist_left_45, dist_forward,
-                dist_right_45, dist_right_90]
-    # Offsets are in YAW space, so left is POSITIVE (see convention
-    # note at the top). These are added straight to scan_yaw below.
-    offsets  = [90, 45, 0, -45, -90]
-    names    = ["left90", "left45", "forward", "right45", "right90"]
-    clear    = [SENSOR_MAX_CM if d == -1 else d for d in readings]
-
-    # Normalise against the best reading actually available, so the
-    # clearance term keeps its full 0..1 range even in tight spaces.
-    max_clear = clear[0]
-    for c in clear:
-        if c > max_clear:
-            max_clear = c
-    if max_clear <= 0:
-        max_clear = 1
-
-    scan_yaw = get_current_yaw()   # re-centred: offsets are relative to this
-    best = -1
-    best_score = -1.0
-    for i in range(len(clear)):
-        if clear[i] < WALL_THRESHOLD_CM:
-            continue               # blocked - not a candidate at all
-        heading_here = scan_yaw + offsets[i]
-        goal_error = abs(heading_difference(get_heading(), heading_here))
-        open_score = clear[i] / max_clear
-        aim_score = 1.0 - (goal_error / 180.0)
-        score = CLEARANCE_WEIGHT * open_score + HEADING_WEIGHT * aim_score
-        print("  " + names[i] + " (yaw" + str(offsets[i]) + "): clear="
-              + str(clear[i]) + " err=" + str(goal_error)
-              + " score=" + str(score))
-        if score > best_score:
-            best_score = score
-            best = i
-
-    if best == -1:
+def raw_distance_cm():
+    """The distance sensor reading in cm: -1 means no echo, None means no sensor found."""
+    try:
+        mm = distance_sensor.distance(DISTANCE_SENSOR_PORT)
+    except Exception:
         return None
+    if mm is None or mm < 0:
+        return -1
+    return mm / 10
 
-    print("choose_escape_direction: chose " + names[best] + ", "
-          + str(clear[best]) + " cm, score=" + str(best_score))
-    return offsets[best]
 
-# ============================================================
-#STAIRCASE NAVIGATION
-# ============================================================
+async def check_left_wheel():
+    print("LEFT WHEEL. Put the rover on the floor, then press RIGHT to start.")
+    await wait_for_button()
+    set_wheel_speeds(300, 0)
+    await runloop.sleep_ms(1000)
+    stop()
+    print("   Only the LEFT wheel should have turned, rolling FORWARD.")
+    print("   The right wheel turned instead? Swap LEFT_MOTOR_PORT and RIGHT_MOTOR_PORT.")
+    print("   The left wheel rolled backward? Change LEFT_MOTOR_DIRECTION (1 <-> -1).")
 
-async def detour():
-    """Both goal directions are blocked: sweep, take the clearer DETOUR_YAWS
-    direction, and step along it, trying the goal direction beside it after
-    every leg.
 
-    Returns the goal yaw that got the rover moving again, or None if this
-    detour found no way round.
-    """
-    start_yaw, slices = await radar_sweep()
-    away = None
-    best = -1
-    for yaw in DETOUR_YAWS:
-        cm = room_clearance(start_yaw, slices, yaw)
-        print("detour: yaw=" + str(yaw) + " clear=" + str(cm))
-        # A missed echo is not open space here, but it is not a wall either:
-        # rank it as barely clear, so any measured clearance beats it.
-        rank = WALL_THRESHOLD_CM if cm is None else cm
-        if rank >= WALL_THRESHOLD_CM and rank > best:
-            best = rank
-            away = yaw
-    if away is None:
-        print("detour: no clear way")
-        return None
+async def check_right_wheel():
+    print("RIGHT WHEEL. Press RIGHT to start.")
+    await wait_for_button()
+    set_wheel_speeds(0, 300)
+    await runloop.sleep_ms(1000)
+    stop()
+    print("   Only the RIGHT wheel should have turned, rolling FORWARD.")
+    print("   The right wheel rolled backward? Change RIGHT_MOTOR_DIRECTION (1 <-> -1).")
 
-    # The goal direction at right angles to `away` is the one that opens up
-    # as the rover steps along the obstacle (away right -> try up; away
-    # down -> try left).
-    beside = GOAL_YAWS[0]
-    if abs(heading_difference(GOAL_YAWS[0], away)) != 90:
-        beside = GOAL_YAWS[1]
-    for _ in range(MAX_DETOUR_LEGS):
-        away_reason, _ = await drive_leg(away)
-        reason, _ = await drive_leg(beside)
-        if reason == DRIVE_DISTANCE:
-            return beside
-        if away_reason != DRIVE_DISTANCE:
-            break      # the detour is blocked too - sweep again from here
-    return None
 
-# ============================================================
-#MAIN LOOP
-# ============================================================
+async def check_gyro():
+    print("GYRO. The rover will spin LEFT (anticlockwise, seen from above) for")
+    print("   1 second. Press RIGHT to start.")
+    await wait_for_button()
+    start = gyro_heading()
+    set_wheel_speeds(-200, 200)
+    await runloop.sleep_ms(1000)
+    stop()
+    await runloop.sleep_ms(500)
+    turned = heading_difference(gyro_heading(), start)
+    print("   The gyro measured " + str(round(turned)) + " degrees (+ means left).")
+    if turned > 20:
+        print("   OK")
+    elif turned < -20:
+        print("   PROBLEM: the gyro measured a RIGHT turn.")
+        print("   If the rover really turned right: swap LEFT_MOTOR_PORT and RIGHT_MOTOR_PORT.")
+        print("   If it really turned left: the hub is upside down, so change HUB_FACE_UP.")
+    else:
+        print("   PROBLEM: the gyro hardly changed. Is the hub on its side? Change HUB_FACE_UP.")
 
-async def main():
-    """Staircase to the star: alternate legs along GOAL_YAWS until red ends it.
 
-    A blocked leg is retried along the other goal direction straight away,
-    then the blocked one is tried again - so the rover steps along an obstacle
-    until the way opens up. Only when BOTH goal directions are blocked does it
-    sweep and detour.
-    """
-    print("=== SPIKE NAV START ===")
-    motion_sensor.reset_yaw(0)   # rover must start square to the room, facing up
-    nxt = 0       # index into GOAL_YAWS of the next leg to try
-    failed = 0    # detours in a row that found no way round
+async def check_drive():
+    global target_heading
+    print("DRIVE 30 CM. Mark the floor beside the middle of a wheel, with at least")
+    print("   40 cm of space ahead, then press RIGHT to start.")
+    await wait_for_button()
+    motion_sensor.reset_yaw(0)     # drive straight ahead from where it points now
+    target_heading = 0
+    await drive_forward(30)
+    print("   Measure how far the middle of the wheel moved. If it was not 30 cm, set")
+    print("   WHEEL_DIAMETER_CM = " + str(WHEEL_DIAMETER_CM) + " x (cm it really moved) / 30")
 
+
+async def check_turns():
+    global target_heading
+    print("TURNING. The rover will turn a quarter turn LEFT, then back again.")
+    print("   Press RIGHT to start.")
+    await wait_for_button()
+    motion_sensor.reset_yaw(0)
+    target_heading = 0
+    await turn_to(WEST)
+    await runloop.sleep_ms(1000)
+    await turn_to(NORTH)
+    print("   Both turns should look like neat quarter turns, and the 'turn:' lines")
+    print("   above should stop within " + str(TURN_ACCURACY) + " degrees of the target.")
+    print("   Turns wobble or overshoot a lot? Lower TURN_SLOW_SPEED.")
+
+
+async def check_distance_sensor():
+    print("DISTANCE SENSOR. Move your hand in front of the sensor and watch the")
+    print("   readings. Press RIGHT when you have seen enough.")
     while True:
-        reason, _ = await drive_leg(GOAL_YAWS[nxt])
-        if reason == DRIVE_DISTANCE:
-            nxt = 1 - nxt
-            continue
+        cm = raw_distance_cm()
+        if cm is None:
+            print("   PROBLEM: no distance sensor on DISTANCE_SENSOR_PORT")
+            return
+        if cm == -1:
+            print("   nothing in range")
+        else:
+            print("   " + str(cm) + " cm")
+        if await right_pressed_within(500):
+            break
+    print("   Now stand the rover facing a wall. Measure from the wall to the MIDDLE")
+    print("   OF THE WHEELS (the centre of a wheel - not the front of the rover or")
+    print("   the sensor) and make that exactly 30 cm. Press RIGHT to measure.")
+    await wait_for_button()
+    readings = []
+    for i in range(5):
+        cm = raw_distance_cm()
+        if cm is not None and cm != -1:
+            readings.append(cm)
+        await runloop.sleep_ms(50)
+    if len(readings) == 0:
+        print("   PROBLEM: no echo from the wall. Is the sensor pointing straight at it?")
+        return
+    readings.sort()
+    cm = readings[len(readings) // 2]
+    suggested = round(30 - cm, 1)
+    print("   The sensor reads " + str(cm) + " cm, so DISTANCE_SENSOR_POSITION_CM should")
+    print("   be about " + str(suggested) + ". It is set to " + str(DISTANCE_SENSOR_POSITION_CM) + ".")
+    if abs(suggested - DISTANCE_SENSOR_POSITION_CM) > 3:
+        print("   That is quite different. Check the 30 cm went to the middle of the")
+        print("   wheels, not to the front of the sensor - then press LEFT to try again.")
 
-        # Blocked: take the other goal direction now. nxt stays put, so the
-        # blocked direction is tried again straight after.
-        reason, _ = await drive_leg(GOAL_YAWS[1 - nxt])
-        if reason == DRIVE_DISTANCE:
-            continue
 
-        print("main: both goal directions blocked")
-        got = await detour()
-        if got is None:
-            failed += 1
-            if failed >= MAX_DETOURS:
-                print("main: no way round after " + str(failed) + " detours - stopping")
-                return
-            continue
-        failed = 0
-        nxt = 1 - GOAL_YAWS.index(got)
-
-# ============================================================
-#MAZE EXPLORATION
-# ============================================================
-
-CELL_CM = LEG_ROTATIONS * math.pi * WHEEL_DIAMETER_CM   # one leg = one cell
-# Room direction -> one-cell step in grid coordinates (+x right, +y up).
-# Left raises yaw, so yaw 90 is -x.
-STEP = {0: (0, 1), 90: (-1, 0), 180: (0, -1), -90: (1, 0)}
+async def check_colour_sensor():
+    print("COLOUR SENSOR. Slide coloured paper under the sensor and watch the")
+    print("   readings. Press RIGHT when you have seen enough.")
+    while True:
+        try:
+            seen = color_sensor.color(COLOUR_SENSOR_PORT)
+        except Exception:
+            print("   PROBLEM: no colour sensor on COLOUR_SENSOR_PORT")
+            return
+        print("   " + colour_name(seen))
+        if await right_pressed_within(500):
+            break
 
 
-class Maze:
-    """What the rover has learnt about the course, in cells.
+async def setup_check():
+    """Test each part of the rover, one test at a time.
 
-    Blocking is stored per EDGE - (cell, yaw) meaning "cannot drive out of
-    this cell in that direction" - because it depends on the side you come
-    from: a cell that is too close to a wall to drive into from the left can
-    still be fine to enter from below. A cell is only marked solid when a
-    wall is so close to its centre that the rover's body could never stand
-    there.
+    Every test waits for you to press RIGHT before it starts. When it has
+    finished, press RIGHT to go on to the next test, or LEFT to do the same
+    test again - for example to measure twice. A setting you change only
+    takes effect when you run the program again.
     """
-    def __init__(self):
-        self.visited = {(0, 0)}
-        self.solid = set()
-        self.open = set()       # (cell, yaw) known to be drivable
-        self.closed = set()     # (cell, yaw) known to be blocked
-        self.touched = set()    # (cell, yaw) walls already nosed up to
+    checks = [check_left_wheel, check_right_wheel, check_gyro, check_drive,
+              check_turns, check_distance_sensor, check_colour_sensor]
+    print("=== SETUP CHECK ===")
+    print("Use the LEFT and RIGHT buttons on the hub to go through the tests.")
+    number = 0
+    while number < len(checks):
+        print("")
+        print("TEST " + str(number + 1) + " OF " + str(len(checks)) + ":")
+        await checks[number]()
+        print("   Press RIGHT for the next test, or LEFT to do this one again.")
+        if await wait_for_button() == "right":
+            number += 1
+    print("")
+    print("=== SETUP CHECK DONE ===")
+    print("Change any settings it suggested, then run it again to make sure.")
 
 
-def neighbour(c, yaw):
-    return (c[0] + STEP[yaw][0], c[1] + STEP[yaw][1])
+# ======================================================================
+# MOVEMENT
+# ======================================================================
+# Drive in straight lines and turn to face any direction. The hub's gyro
+# keeps the rover pointing the right way, so a route stays accurate.
+#
+#   await drive_forward(50)       drive 50 cm forward
+#   await drive_backward(20)      back up 20 cm
+#   await turn_left(90)           turn 90 degrees left
+#   await turn_right(45)          turn 45 degrees right
+#   await turn_to(WEST)           face a compass direction
+#   cm_driven()                   how far the last drive really went
+#
+# NORTH is the way the rover faced when the program started. WEST is 90
+# degrees to its left, EAST 90 degrees to its right, SOUTH behind it, and
+# NORTH_WEST, NORTH_EAST, SOUTH_WEST, SOUTH_EAST are half way between.
+
+def check_movement_settings():
+    check_number("DRIVE_SPEED", DRIVE_SPEED, 50, 1000)
+    check_number("DRIVE_SLOW_SPEED", DRIVE_SLOW_SPEED, 20, 1000)
+    check_number("DRIVE_SLOW_ZONE_CM", DRIVE_SLOW_ZONE_CM, 0, 20)
+    check_number("TURN_SPEED", TURN_SPEED, 30, 1000)
+    check_number("TURN_SLOW_SPEED", TURN_SLOW_SPEED, 10, 1000)
+    check_number("TURN_SLOW_ZONE", TURN_SLOW_ZONE, 0, 90)
+    check_number("TURN_ACCURACY", TURN_ACCURACY, 0.5, 10)
+    check_number("TURN_NUDGE_SPEED", TURN_NUDGE_SPEED, 10, 300)
+    check_number("STEERING", STEERING, 0, 50)
+    check_number("STUCK_MS", STUCK_MS, 200, 5000)
+    check_number("TICK_MS", TICK_MS, 10, 100)
 
 
-def in_bounds(c):
-    return (-EXPLORE_LEFT_CM <= c[0] * CELL_CM <= EXPLORE_RIGHT_CM
-            and -EXPLORE_DOWN_CM <= c[1] * CELL_CM <= EXPLORE_UP_CM)
+SETTINGS_CHECKS.append(check_movement_settings)
+
+target_heading = 0     # the direction the rover is meant to be facing
+last_drive_cm = 0      # how far the last drive went (see cm_driven)
 
 
-def can_move(maze, c, yaw):
-    n = neighbour(c, yaw)
-    return in_bounds(n) and n not in maze.solid and (c, yaw) not in maze.closed
+async def movement_tick():
+    """A short wait inside every movement. While it waits it also checks the
+    time limit and the colour sensor, so every move reacts to them."""
+    await runloop.sleep_ms(TICK_MS)
+    check_time_limit()
+    await check_colour()
 
 
-def plan_step(maze, pos, heading, target):
-    """First move (a room yaw) of the shortest route from pos to a goal cell.
+async def drive(cm, speed, stop_at_wall_cm=0):
+    """Drive cm in a straight line along target_heading.
 
-    The goal is target if given, otherwise the nearest cell not visited yet.
-    Edges and cells it has not seen count as passable - that is what sends
-    the rover to look at them. The current heading is tried first, so ties go
-    to driving straight on. Returns None if no goal cell can be reached.
+    speed above 0 drives forward, below 0 drives backward. If stop_at_wall_cm
+    is more than 0, the rover also stops when the distance sensor sees
+    something closer than that.
+
+    Returns how the drive ended:
+      "done"   it drove the whole way
+      "wall"   something came closer than stop_at_wall_cm
+      "stuck"  the wheels stopped turning (pushing against something)
     """
-    order = [heading] + [y for y in STEP if y != heading]
-    seen = {pos}
-    queue = []
-    for yaw in order:
-        if can_move(maze, pos, yaw):
-            n = neighbour(pos, yaw)
-            seen.add(n)
-            queue.append((n, yaw))
-    i = 0
-    while i < len(queue):
-        c, first = queue[i]
-        i += 1
-        is_goal = (c == target) if target is not None else (c not in maze.visited)
-        if is_goal:
-            return first
-        for yaw in order:
-            n = neighbour(c, yaw)
-            if n not in seen and can_move(maze, c, yaw):
-                seen.add(n)
-                queue.append((n, first))
-    return None
+    global last_drive_cm
+    goal = cm_to_wheel_degrees(abs(cm))
+    slow_from = goal - cm_to_wheel_degrees(DRIVE_SLOW_ZONE_CM)
+    reset_wheel_counters()
+    result = "done"
+    progress = 0     # wheel position at the last stuck check
+    still_ms = 0     # how long the wheels have hardly moved
+    while wheel_degrees() < goal:
+        if stop_at_wall_cm > 0:
+            distance = read_distance()
+            if distance != -1 and distance < stop_at_wall_cm:
+                result = "wall"
+                break
+
+        # Slow down for the last few cm, or the rover rolls on past the end.
+        now_speed = speed
+        if wheel_degrees() > slow_from:
+            now_speed = DRIVE_SLOW_SPEED
+            if speed < 0:
+                now_speed = -DRIVE_SLOW_SPEED
+
+        # Steering: error is how far the rover has drifted. If it has
+        # drifted right (error above 0), the right wheel speeds up and the
+        # left wheel slows down, which turns it back left - and the other
+        # way round. The bigger the drift, the harder it steers.
+        error = heading_difference(target_heading, gyro_heading())
+        steer = error * STEERING
+        limit = abs(now_speed) / 2
+        steer = max(-limit, min(limit, steer))
+        set_wheel_speeds(now_speed - steer, now_speed + steer)
+        await movement_tick()
+
+        # Stuck check: while the motors run, the wheels should keep turning.
+        if wheel_degrees() - progress > 10:
+            progress = wheel_degrees()
+            still_ms = 0
+        else:
+            still_ms += TICK_MS
+            if still_ms >= STUCK_MS:
+                result = "stuck"
+                break
+    stop()
+    last_drive_cm = wheel_degrees_to_cm(wheel_degrees())
+    print("drive: " + result + " after " + str(round(last_drive_cm, 1)) + " cm")
+    return result
 
 
-async def steady_distance():
-    """Median of 3 readings once the rover has settled; -1 only if all miss."""
-    await runloop.sleep_ms(LOOK_SETTLE_MS)
-    vals = []
-    for _ in range(3):
+async def drive_forward(cm, stop_at_wall_cm=0):
+    """Drive forward. Example: await drive_forward(30)
+
+    Add stop_at_wall_cm to stop early if a wall gets that close (this needs
+    the Distance sensor module): await drive_forward(80, stop_at_wall_cm=10)
+    Returns "done", "wall" or "stuck" - see drive().
+    """
+    return await drive(cm, DRIVE_SPEED, stop_at_wall_cm)
+
+
+async def drive_backward(cm):
+    """Drive backward. Example: await drive_backward(10)
+
+    There is no sensor at the back, so make sure there is room!
+    """
+    return await drive(cm, -DRIVE_SPEED)
+
+
+def cm_driven():
+    """How far the last drive really went, in cm. Useful after a drive that
+    stopped early, e.g. to reverse exactly that far."""
+    return last_drive_cm
+
+
+async def spin(heading, speed, way):
+    """Spin on the spot until the rover faces heading.
+
+    way is 1 to turn left or -1 to turn right - even if that is the long way
+    round. It slows down to TURN_SLOW_SPEED for the last TURN_SLOW_ZONE
+    degrees. Returns True when it gets there, or False if it got stuck - for
+    example when the back of the rover hits a wall as it swings round.
+    turn_to() uses this; you will normally want turn_to() instead.
+    """
+    to_turn = heading_difference(heading, gyro_heading()) * way
+    if to_turn < 0:
+        to_turn += 360           # the long way round
+    turned = 0                   # degrees turned so far, in the direction of way
+    last_heading = gyro_heading()
+    checked = 0                  # degrees turned at the last stuck check
+    still_ms = 0                 # how long it has hardly turned
+    while turned < to_turn:
+        now_speed = speed
+        if to_turn - turned < TURN_SLOW_ZONE:
+            now_speed = min(speed, TURN_SLOW_SPEED)
+        # Left turn: left wheel backward, right wheel forward.
+        set_wheel_speeds(-way * now_speed, way * now_speed)
+        await movement_tick()
+        now = gyro_heading()
+        turned += heading_difference(now, last_heading) * way
+        last_heading = now
+        # Stuck check: while the rover turns, the gyro should keep changing.
+        if turned - checked > 2:
+            checked = turned
+            still_ms = 0
+        else:
+            still_ms += TICK_MS
+            if still_ms >= STUCK_MS:
+                stop()
+                return False
+    stop()
+    return True
+
+
+async def face(heading, way):
+    """Spin to face heading (way: 1 = left, -1 = right), then nudge it until it
+    is within TURN_ACCURACY degrees. Returns False if it got stuck on the way."""
+    if not await spin(heading, TURN_SPEED, way):
+        return False
+    # The rover rolls on a little after the motors stop. If it ends up more
+    # than TURN_ACCURACY degrees out, nudge it back slowly (up to 3 tries).
+    for attempt in range(3):
+        await runloop.sleep_ms(100)
+        error = heading_difference(heading, gyro_heading())
+        if abs(error) <= TURN_ACCURACY:
+            return True
+        if error > 0:
+            nudge_way = 1
+        else:
+            nudge_way = -1
+        if not await spin(heading, TURN_NUDGE_SPEED, nudge_way):
+            return False
+    return True
+
+
+async def turn_to(direction):
+    """Turn on the spot to face a direction.
+
+    direction is a gyro heading: NORTH, WEST, NORTH_WEST and so on, or any
+    angle. Example: await turn_to(WEST)
+
+    It turns the short way round. If the rover gets stuck - there is not
+    enough room for its back to swing round - it swings back to where it
+    started and tries the long way round instead. If that gets stuck too,
+    it shuffles sideways a little (see shuffle) and tries once more.
+    Returns True when the rover faces the new way, or False if nothing
+    worked (it is then facing the way it was before).
+    """
+    global target_heading
+    before = target_heading
+    target_heading = normalise(direction)
+    if abs(heading_difference(target_heading, gyro_heading())) <= TURN_ACCURACY:
+        return True
+    if heading_difference(target_heading, gyro_heading()) > 0:
+        short_way = 1        # left
+    else:
+        short_way = -1       # right
+    for way in [short_way, -short_way]:
+        if await face(target_heading, way):
+            print("turn: to " + str(target_heading) + ", stopped at " + str(gyro_heading()))
+            return True
+        # Stuck: swing back the way it came, to where it started.
+        print("turn: no room to turn that way round - swinging back")
+        await face(before, -way)
+    # Turning short_way, the back of the rover swings the other way, so that
+    # is where the wall is. Shuffle away from it, then try once more.
+    target_heading = before
+    if await shuffle(short_way):
+        target_heading = normalise(direction)
+        if await face(target_heading, short_way):
+            print("turn: to " + str(target_heading) + ", stopped at " + str(gyro_heading()))
+            return True
+        await face(before, -short_way)
+        target_heading = before
+    print("turn: no room to turn to " + str(normalise(direction)) + " here")
+    return False
+
+
+async def shuffle(way):
+    """Move the rover a few cm sideways without turning far, like parallel
+    parking: angle it 25 degrees to one side (way: 1 = left, -1 = right),
+    drive forward 10 cm, straighten up and reverse the same distance. That
+    moves it about 4 cm to that side. Returns False if there was no room
+    even for that.
+    """
+    global target_heading
+    heading = target_heading
+    print("turn: shuffling sideways to make room")
+    target_heading = normalise(heading + way * 25)
+    if not await face(target_heading, way):
+        target_heading = heading
+        await face(heading, -way)
+        return False
+    await drive_forward(10, stop_at_wall_cm=8)
+    moved = cm_driven()
+    target_heading = heading
+    await face(heading, -way)
+    await drive_backward(moved)
+    return True
+
+
+async def turn_left(degrees=90):
+    """Turn left by degrees (up to 180). Example: await turn_left(90)
+    Returns True, or False if there was no room to turn (see turn_to)."""
+    return await turn_to(target_heading + degrees)
+
+
+async def turn_right(degrees=90):
+    """Turn right by degrees (up to 180). Example: await turn_right(90)
+    Returns True, or False if there was no room to turn (see turn_to)."""
+    return await turn_to(target_heading - degrees)
+
+
+# ======================================================================
+# DISTANCE SENSOR
+# ======================================================================
+# Read the distance sensor and use it to stop before walls. Once this module
+# is installed, drive_forward() can stop early for a wall too.
+#
+#   read_distance()                  distance ahead right now, in cm (-1 = no echo)
+#   await measure_distance()         a careful reading, standing still
+#   await drive_to_wall(10)          drive forward until a wall is 10 cm away
+#   await drive_forward(80, stop_at_wall_cm=10)   drive 80 cm, or stop early for a wall
+
+def check_distance_settings():
+    check_number("MAX_TRUSTED_CM", MAX_TRUSTED_CM, 20, 200)
+    check_number("SETTLE_MS", SETTLE_MS, 0, 2000)
+
+
+SETTINGS_CHECKS.append(check_distance_settings)
+
+
+def read_distance():
+    """Distance to whatever is in front of the sensor, in cm.
+
+    Returns -1 when there is no echo it can trust: nothing in range, or the
+    sound bounced away (this happens when the sensor sees a wall at a slant).
+    """
+    mm = distance_sensor.distance(DISTANCE_SENSOR_PORT)
+    if mm is None or mm < 0:
+        return -1
+    cm = mm / 10
+    if cm > MAX_TRUSTED_CM:
+        return -1
+    return cm
+
+
+async def measure_distance():
+    """A careful distance reading for making a decision.
+
+    Waits for the rover to stop wobbling, takes three readings and returns
+    the middle one, so one bad reading cannot fool it. Returns -1 only if
+    all three had no echo.
+    """
+    await runloop.sleep_ms(SETTLE_MS)
+    readings = []
+    for i in range(3):
         cm = read_distance()
         if cm != -1:
-            vals.append(cm)
+            readings.append(cm)
         await runloop.sleep_ms(30)
-    if not vals:
+    if len(readings) == 0:
         return -1
-    vals.sort()
-    return vals[len(vals) // 2]
+    readings.sort()
+    return readings[len(readings) // 2]
 
 
-async def look(maze, pos, yaw):
-    """Face a room direction and record what the distance sensor sees.
-
-    Every cell the rover could drive into without the obstacle stop firing
-    gets a known-open edge. Blocking is only recorded when the wall is in the
-    very next cell: further out the beam is wide enough to pick up things
-    beside the line, so that call waits until the rover is close.
-    Returns (free cells straight ahead, reading in cm or -1).
+async def drive_to_wall(stop_cm, max_cm=200):
+    """Drive forward until something is stop_cm away, or max_cm has been
+    driven. Example: await drive_to_wall(10)
+    Returns "wall", "done" or "stuck", like drive_forward().
     """
-    await turn_to_yaw(yaw)
-    d = await steady_distance()
-    if d == -1 or d > MAX_TRUSTED_CM:
-        n_free = LOOK_MISS_CELLS
+    return await drive_forward(max_cm, stop_at_wall_cm=stop_cm)
+
+
+# ======================================================================
+# COLOUR SENSOR
+# ======================================================================
+# Watches the floor while the rover moves. When the sensor arrives on one of
+# the colours in COLOURS_TO_FIND, the rover stops and on_colour_found() runs.
+# Afterwards the move it was making carries on. This happens during every
+# drive and turn, including the autonomous searches, without you calling
+# anything.
+#
+#   on_colour_found(colour)   what to do on a colour - WRITE YOUR OWN ACTIONS HERE
+#   read_colour()             the colour under the sensor right now
+#   found_colours             a list of the colours found so far
+
+def check_colour_settings():
+    if not isinstance(COLOURS_TO_FIND, list):
+        setting_problem("COLOURS_TO_FIND should be a list in square brackets, like [color.GREEN, color.RED]")
+    check_number("COLOUR_PAUSE_MS", COLOUR_PAUSE_MS, 0, 60000)
+    check_true_false("REACT_ONCE", REACT_ONCE)
+
+
+SETTINGS_CHECKS.append(check_colour_settings)
+
+found_colours = []         # colours found so far, in the order they were found
+last_colour = None         # what the sensor saw last time
+sensor_missing = False
+
+
+async def on_colour_found(colour):
+    # ======================================================================
+    #
+    #    ADD YOUR OWN ACTIONS HERE
+    #
+    #    This runs when the rover drives onto a colour from COLOURS_TO_FIND.
+    #    The wheels have already stopped. For now it just waits for
+    #    COLOUR_PAUSE_MS (5 seconds).
+    #
+    #    Ideas:
+    #        if colour == color.GREEN:
+    #            ... drop the payload with a third motor ...
+    #        if colour == color.RED:
+    #            end_run()          # finish the run here
+    #        if len(found_colours) == len(COLOURS_TO_FIND):
+    #            end_run()          # finish once every colour has been found
+    #
+    #    Do NOT drive the rover from here. When this function ends, the move
+    #    that was interrupted carries on, and the autonomy modules still
+    #    think the rover is where it stopped. Other motors, the lights and
+    #    sounds are fine.
+    #
+    # ======================================================================
+    print("COLOUR: found " + colour_name(colour) + ", pausing "
+          + str(COLOUR_PAUSE_MS // 1000) + " s")
+    await runloop.sleep_ms(COLOUR_PAUSE_MS)
+    print("COLOUR: carrying on")
+
+
+def read_colour():
+    """The colour under the sensor right now, e.g. color.GREEN.
+
+    Returns None if there is no colour sensor on COLOUR_SENSOR_PORT. It
+    warns once instead of crashing, because a crash in the middle of a
+    drive would leave the motors running.
+    """
+    global sensor_missing
+    try:
+        return color_sensor.color(COLOUR_SENSOR_PORT)
+    except Exception:
+        if not sensor_missing:
+            print("WARNING: no colour sensor on COLOUR_SENSOR_PORT - colours are ignored")
+            sensor_missing = True
+        return None
+
+
+async def check_colour():
+    """Every movement calls this many times a second. It reacts only at the
+    moment the sensor ARRIVES on a colour, so sitting on a patch counts once."""
+    global last_colour
+    colour = read_colour()
+    just_arrived = colour != last_colour
+    last_colour = colour
+    if not just_arrived or colour not in COLOURS_TO_FIND:
+        return
+    if REACT_ONCE and colour in found_colours:
+        return
+    if colour not in found_colours:
+        found_colours.append(colour)
+    stop()
+    await on_colour_found(colour)
+
+
+# ======================================================================
+# GRID MOVES
+# ======================================================================
+# Used by both autonomy modules. They think of the floor as a grid of
+# squares, STEP_CM wide. The rover starts in the middle of square (0, 0),
+# facing NORTH. The first number counts squares to the EAST (right of the
+# start), the second counts squares to the NORTH (ahead of the start).
+#
+#   next_square(square, direction)   the square next door in that direction
+#   inside_course(square)            False for squares outside the COURSE_ limits
+#   await step(direction)            try to move one square: "done", "blocked" or "no room"
+#   await check_by_wall(direction)   sweep the colour sensor up to the wall ahead
+
+def check_grid_settings():
+    check_number("STEP_CM", STEP_CM, 5, 50)
+    check_number("WALL_STOP_CM", WALL_STOP_CM, 5, 50)
+    check_number("COURSE_NORTH_CM", COURSE_NORTH_CM, 0, 1000)
+    check_number("COURSE_SOUTH_CM", COURSE_SOUTH_CM, 0, 1000)
+    check_number("COURSE_EAST_CM", COURSE_EAST_CM, 0, 1000)
+    check_number("COURSE_WEST_CM", COURSE_WEST_CM, 0, 1000)
+    check_true_false("CHECK_BY_WALLS", CHECK_BY_WALLS)
+    check_number("WALL_CHECK_GAP_CM", WALL_CHECK_GAP_CM, 2, 30)
+
+
+SETTINGS_CHECKS.append(check_grid_settings)
+
+# How one step in each direction changes the square: (east, north).
+MOVES = {NORTH: (0, 1), WEST: (-1, 0), SOUTH: (0, -1), EAST: (1, 0)}
+DIRECTION_NAMES = {NORTH: "NORTH", WEST: "WEST", SOUTH: "SOUTH", EAST: "EAST"}
+
+
+def next_square(square, direction):
+    """The square next to square in direction, e.g. next_square((0, 0), NORTH) is (0, 1)."""
+    move = MOVES[direction]
+    return (square[0] + move[0], square[1] + move[1])
+
+
+def inside_course(square):
+    """True if the middle of square is inside the COURSE_ limits."""
+    east_cm = square[0] * STEP_CM
+    north_cm = square[1] * STEP_CM
+    if east_cm > COURSE_EAST_CM or east_cm < -COURSE_WEST_CM:
+        return False
+    if north_cm > COURSE_NORTH_CM or north_cm < -COURSE_SOUTH_CM:
+        return False
+    return True
+
+
+async def step(direction, been_there=False):
+    """Move one square in direction.
+
+    Set been_there to True when the rover has stood in that square before.
+    It then knows there is room, so:
+      - it does not stop for walls (a wall just beyond that square could
+        otherwise stop it short - it still notices if it gets stuck)
+      - if the square is straight behind it, it reverses into it instead of
+        turning round, which needs no room to turn
+
+    Returns how it went:
+      "done"     it reached the next square
+      "blocked"  something was in the way, so it came back to where it started
+      "no room"  there was not enough room to turn to face that way
+    """
+    name = DIRECTION_NAMES[direction]
+    behind = normalise(target_heading + 180)
+    if been_there and direction == behind:
+        await drive_backward(STEP_CM)
+        print("step: " + name + " done (reversed)")
+        return "done"
+    if not await turn_to(direction):
+        print("step: " + name + " - no room to turn that way")
+        return "no room"
+    stop_cm = WALL_STOP_CM
+    if been_there:
+        stop_cm = 0
+    result = await drive_forward(STEP_CM, stop_at_wall_cm=stop_cm)
+    if result == "done":
+        print("step: " + name + " done")
+        return "done"
+    print("step: " + name + " blocked (" + result + "), going back")
+    await drive_backward(cm_driven())
+    return "blocked"
+
+
+async def check_by_wall(direction):
+    """Sweep the colour sensor over the strip of floor next to the wall ahead.
+
+    The rover's path runs through the middle of the squares, so it never
+    crosses the strip of floor between the last square and a wall. A patch
+    could be there as much as anywhere else, so this brings the colour
+    sensor into that strip and back:
+      - colour sensor at the front: drive towards the wall, then back
+      - colour sensor at the back: turn round and reverse towards it, then back
+    Either way, the rover stops WALL_CHECK_GAP_CM short of the wall. Nothing
+    happens if CHECK_BY_WALLS is False, there is no wall close ahead, or
+    there is no room to turn round.
+    """
+    if not CHECK_BY_WALLS:
+        return
+    if not await turn_to(direction):
+        return
+    distance = await measure_distance()
+    if distance == -1 or distance > STEP_CM + WALL_STOP_CM:
+        return       # no wall close ahead
+    # How far the wall is from the middle of the wheels. distance is
+    # measured from the distance sensor, which sits in front of them.
+    wall_cm = distance + DISTANCE_SENSOR_POSITION_CM
+    if COLOUR_SENSOR_POSITION_CM >= 0:
+        # Drive forward until the front of the rover is WALL_CHECK_GAP_CM
+        # from the wall. Parts sticking out in front of the distance sensor
+        # count too.
+        stop_cm = WALL_CHECK_GAP_CM + ROVER_FRONT_CM - DISTANCE_SENSOR_POSITION_CM
+        move = distance - stop_cm
+        if move < 3:
+            return   # already close enough
+        print("wall check: driving up to the wall")
+        await drive_forward(move, stop_at_wall_cm=stop_cm)
+        await drive_backward(cm_driven())
     else:
-        n_free = max(0, int((d - APPROACH_STOP_CM) // CELL_CM))
-    c = pos
-    for _ in range(n_free):
-        if not in_bounds(neighbour(c, yaw)):
+        # Turn round, then reverse until the back of the rover is
+        # WALL_CHECK_GAP_CM from the wall. The reverse is blind - there is
+        # no sensor at the back - so it goes by the distance measured now.
+        move = wall_cm - ROVER_BACK_CM - WALL_CHECK_GAP_CM
+        if move < 3:
+            return   # already close enough
+        if not await turn_to(direction + 180):
+            return   # no room to turn round here
+        print("wall check: reversing up to the wall")
+        await drive_backward(move)
+        await drive_forward(cm_driven())
+
+
+# ======================================================================
+# WALL FOLLOWER
+# ======================================================================
+# Autonomy option 1. The rover keeps one hand on a wall and follows it, the
+# way you could find your way round a maze in the dark. It needs no map, so
+# it is simple and easy to predict.
+#
+# How it works, one grid square at a time:
+#   1. Drive straight on until there is a wall ahead.
+#   2. Turn so that wall is on the hand side.
+#   3. At every square, try these in order: turn towards the hand, straight
+#      on, turn away from the hand, go back. Take the first one that works.
+#   4. Stop when it is about to make its very first move again: it has
+#      been all the way round. (It also stops if it finds itself going round
+#      the same loop again and again.)
+#
+# It remembers every square it tried to drive into and could not, and
+# treats those squares as wall from then on. (When there is only no room
+# to turn that way, it simply tries the next way.) Real walls do not line up
+# with the grid, so a square can look blocked from one side and open from
+# another. Remembering keeps the rover's hand on the wall instead of
+# letting it wander off in circles.
+#
+# It only visits squares along the walls it follows. A patch in the middle
+# of a big open space, or next to a wall that is not joined to the others,
+# can be missed. Choose the hand that suits your course!
+#
+#   await follow_wall()
+
+def check_wall_follower_settings():
+    check_true_false("KEEP_WALL_ON_RIGHT", KEEP_WALL_ON_RIGHT)
+
+
+SETTINGS_CHECKS.append(check_wall_follower_settings)
+
+
+async def follow_wall():
+    print("=== WALL FOLLOWER START ===")
+    if KEEP_WALL_ON_RIGHT:
+        hand = -90          # a right turn
+    else:
+        hand = 90           # a left turn
+    square = (0, 0)
+    facing = NORTH
+    visited = {square}      # squares the rover has stood on
+    walls = set()           # squares it tried to drive into and could not
+    first_move = None       # (square, direction) of its first move along the wall
+    times_made = {}         # how many times it has made each (square, direction) move
+
+    # 1. Drive straight on until there is a wall ahead.
+    while True:
+        ahead = next_square(square, facing)
+        if not inside_course(ahead):
             break
-        maze.open.add((c, yaw))
-        maze.closed.discard((c, yaw))
-        c = neighbour(c, yaw)
-    if n_free == 0 and 0 <= d <= MAX_TRUSTED_CM:
-        maze.closed.add((pos, yaw))
-        maze.open.discard((pos, yaw))
-        n = neighbour(pos, yaw)
-        if d < CELL_CM + ROVER_RADIUS_CM and n not in maze.visited:
-            maze.solid.add(n)
-    print("look: at " + str(pos) + " yaw=" + str(yaw) + " dist=" + str(d)
-          + " free=" + str(n_free))
-    return n_free, d
+        if await step(facing) != "done":
+            walls.add(ahead)
+            await check_by_wall(facing)
+            break
+        square = ahead
+        visited.add(square)
+
+    # 2. Turn away from the hand, so the wall ahead ends up on the hand side.
+    facing = normalise(facing - hand)
+
+    # 3. Follow the wall.
+    while True:
+        moved = False
+        for turn in [hand, 0, -hand, 180]:
+            direction = normalise(facing + turn)
+            ahead = next_square(square, direction)
+            if ahead in walls or not inside_course(ahead):
+                continue
+            # 4. Back to the first move? Then it has been all the way round.
+            move = (square, direction)
+            if move == first_move:
+                print("follow: back to its first move - all the way round, finished")
+                return
+            if times_made.get(move, 0) >= 2:
+                print("follow: going round the same loop again - finished")
+                return
+            result = await step(direction, ahead in visited)
+            if result == "done":
+                if first_move is None:
+                    first_move = move
+                times_made[move] = times_made.get(move, 0) + 1
+                square = ahead
+                visited.add(square)
+                facing = direction
+                moved = True
+                break
+            if result == "blocked" and ahead not in visited:
+                walls.add(ahead)
+                await check_by_wall(direction)    # a new bit of wall: look for a patch by it
+            # "no room": not enough room to turn that way here - try the next way
+        if not moved:
+            print("follow: no way out of square " + str(square))
+            return
 
 
-async def back_up(deg):
-    """Reverse until the wheels have turned deg degrees - undoes a partial leg."""
-    if deg <= 0:
-        return
-    motor.reset_relative_position(port.A, 0)
-    motor.reset_relative_position(port.B, 0)
-    motor.run(port.A, -MOVE_SPEED)
-    motor.run(port.B, MOVE_SPEED)
-    limit = deg * 1000 // MOVE_SPEED * LEG_STUCK_FACTOR + 500
-    elapsed = 0
-    while wheel_degrees() < deg and elapsed < limit:
-        await runloop.sleep_ms(SENSOR_POLL_MS)
-        elapsed += SENSOR_POLL_MS
-        await handle_color(-MOVE_SPEED, MOVE_SPEED)
-    motor.stop(port.A)
-    motor.stop(port.B)
+# ======================================================================
+# MAZE EXPLORER
+# ======================================================================
+# Autonomy option 2. The rover draws a map of the course as it goes, and
+# keeps heading for the nearest square it has not visited yet, until it has
+# been everywhere it can reach. It finds patches out in the open that the
+# wall follower misses, but it is slower and harder to follow.
+#
+# The map remembers:
+#   - which squares the rover has visited
+#   - which moves between squares are open, and which are blocked by a wall
+#   - which squares are "solid": so close to a wall the rover can never stand there
+#
+# Each time round its main loop, the explorer:
+#   1. Plans: picks the unvisited square to head for with a ripple search
+#      (next_move) - the nearest one, or with HEAD_TOWARDS set, one that is
+#      near and also lies in that direction.
+#   2. Looks: if it does not know yet whether that first move is open, and
+#      has never been in that square, it faces that way and measures. One
+#      look maps a whole line of squares.
+#   3. Moves one square, or marks the move as blocked if it could not.
+#
+# If the back of the rover would hit something as it turns to face a new
+# way, it turns back and marks that way as blocked from that square. To go
+# back to a square right behind it, it reverses instead of turning round.
+#
+# If you know roughly where to search first, set HEAD_TOWARDS. The rover
+# still drives only NORTH, SOUTH, EAST and WEST, one square at a time, and
+# still searches everywhere in the end - it just searches that way first.
+#
+#   await explore()
+
+# For each compass direction: how far one square that way goes (east, north).
+# The diagonals go 0.7 east or west and 0.7 north or south - together that is
+# one square's length, by Pythagoras.
+DIRECTION_STEPS = {
+    NORTH: (0, 1), NORTH_EAST: (0.7, 0.7), EAST: (1, 0), SOUTH_EAST: (0.7, -0.7),
+    SOUTH: (0, -1), SOUTH_WEST: (-0.7, -0.7), WEST: (-1, 0), NORTH_WEST: (-0.7, 0.7),
+}
+def check_explorer_settings():
+    if HEAD_TOWARDS is not None and HEAD_TOWARDS not in DIRECTION_STEPS:
+        setting_problem("HEAD_TOWARDS should be NORTH, NORTH_EAST, EAST, SOUTH_EAST, SOUTH, "
+                        + "SOUTH_WEST, WEST, NORTH_WEST or None (without quote marks)")
+    check_number("HEAD_STRENGTH", HEAD_STRENGTH, 0, 10)
+    check_number("NO_ECHO_SQUARES", NO_ECHO_SQUARES, 0, 10)
 
 
-async def touch_wall(maze, pos, yaw, gap_cm):
-    """Nose up to the wall ahead and back, once per cell and direction.
+SETTINGS_CHECKS.append(check_explorer_settings)
 
-    The rover only stops at cell centres, which leaves a strip in front of
-    each wall the colour sensor never crosses - and the patches often sit
-    right against a wall.
+
+class CourseMap:
+    """Everything the rover has learnt about the course so far."""
+    def __init__(self):
+        self.visited = {(0, 0)}       # squares the rover has stood on
+        self.solid = set()            # squares the rover can never stand on
+        self.open = set()             # (square, direction) moves known to be open
+        self.blocked = set()          # (square, direction) moves known to be blocked
+
+
+def can_move(course_map, square, direction):
+    """Could the rover move from square in direction, as far as the map knows?
+
+    Moves it has never tried count as possible: that is what sends the rover
+    off to look at new places.
     """
-    if not TOUCH_WALLS or (pos, yaw) in maze.touched or gap_cm < 3:
-        return
-    maze.touched.add((pos, yaw))
-    leg_deg = LEG_ROTATIONS * 360
-    await drive_until_event(MOVE_SPEED, APPROACH_STOP_CM, 181,
-                            leg_deg * 1000 // MOVE_SPEED * LEG_STUCK_FACTOR, leg_deg)
-    await back_up(wheel_degrees())
+    ahead = next_square(square, direction)
+    if not inside_course(ahead):
+        return False
+    if ahead in course_map.solid:
+        return False
+    if (square, direction) in course_map.blocked:
+        return False
+    return True
 
 
-def print_map(maze, pos):
-    """Map rows top to bottom: R rover, o visited, . seen open, # solid, blank unknown."""
-    seen_open = set(neighbour(c, y) for c, y in maze.open)
-    cells = maze.visited | maze.solid | seen_open
-    xs = [c[0] for c in cells]
-    ys = [c[1] for c in cells]
-    for y in range(max(ys), min(ys) - 1, -1):
+def next_move(course_map, square, facing):
+    """Choose the unvisited square to head for, and the first move towards it.
+
+    This is a "ripple" search (computer scientists call it a breadth-first
+    search). Imagine dropping a stone into water on the rover's square. The
+    ripple spreads out one square at a time, to every square the rover could
+    move to, so it reaches each square by the shortest route. Each square in
+    the ripple remembers how many steps away it is, and which way the ripple
+    left the rover's square: the first move of that route.
+
+    With HEAD_TOWARDS = None, the first unvisited square the ripple reaches
+    wins: it is the nearest one. Otherwise every unvisited square gets a
+    score - its number of steps, minus HEAD_STRENGTH for every square it lies
+    in the HEAD_TOWARDS direction - and the lowest score wins.
+
+    Returns (first move, target square), or (None, None) when every square it
+    can reach has been visited.
+    """
+    # Try the way the rover already faces first, so it prefers going straight on.
+    directions = [facing]
+    for direction in [NORTH, WEST, SOUTH, EAST]:
+        if direction != facing:
+            directions.append(direction)
+    if HEAD_TOWARDS is not None:
+        towards_east, towards_north = DIRECTION_STEPS[HEAD_TOWARDS]
+
+    best_move = None
+    best_square = None
+    best_score = 0
+    reached = {square}
+    ripple = []        # (square, first move, steps) - nearest first
+    for direction in directions:
+        if can_move(course_map, square, direction):
+            ahead = next_square(square, direction)
+            reached.add(ahead)
+            ripple.append((ahead, direction, 1))
+
+    i = 0
+    while i < len(ripple):
+        here, first_move, steps = ripple[i]
+        i += 1
+        if here not in course_map.visited:
+            if HEAD_TOWARDS is None:
+                return first_move, here
+            # How far this square lies in the HEAD_TOWARDS direction, in squares.
+            how_far_that_way = here[0] * towards_east + here[1] * towards_north
+            score = steps - HEAD_STRENGTH * how_far_that_way
+            if best_move is None or score < best_score:
+                best_move = first_move
+                best_square = here
+                best_score = score
+        for direction in directions:
+            ahead = next_square(here, direction)
+            if ahead not in reached and can_move(course_map, here, direction):
+                reached.add(ahead)
+                ripple.append((ahead, first_move, steps + 1))
+    return best_move, best_square
+
+
+async def look(course_map, square, direction):
+    """Measure the distance in direction (the rover must already face that
+    way) and write what it means on the map.
+
+    Every square the rover could drive into before the wall stop kicks in is
+    marked open. A wall is only marked when it is in the very next square:
+    further away the sensor's beam is wide enough to catch things off to the
+    side, so that decision waits until the rover is close.
+
+    Returns (how many squares ahead are free, the distance in cm or -1).
+    """
+    distance = await measure_distance()
+    if distance == -1:
+        free = NO_ECHO_SQUARES
+    else:
+        free = max(0, int((distance - WALL_STOP_CM) // STEP_CM))
+
+    here = square
+    for i in range(free):
+        if not inside_course(next_square(here, direction)):
+            break
+        course_map.open.add((here, direction))
+        course_map.blocked.discard((here, direction))
+        here = next_square(here, direction)
+
+    if free == 0 and distance != -1:
+        course_map.blocked.add((square, direction))
+        course_map.open.discard((square, direction))
+        # Is the wall so close that the rover could never stand in the next
+        # square, even sideways? The middle of that square is STEP_CM ahead
+        # of the wheels, and the distance sensor is already
+        # DISTANCE_SENSOR_POSITION_CM ahead.
+        ahead = next_square(square, direction)
+        wall_from_middle = distance - (STEP_CM - DISTANCE_SENSOR_POSITION_CM)
+        if wall_from_middle < ROVER_WIDTH_CM / 2 and ahead not in course_map.visited:
+            course_map.solid.add(ahead)
+
+    print("look: " + DIRECTION_NAMES[direction] + " from " + str(square) + ", "
+          + str(distance) + " cm, " + str(free) + " squares free")
+    return free, distance
+
+
+def print_map(course_map, square):
+    """Print the map with NORTH at the top.
+    R = rover, o = visited, . = seen to be open, # = solid, blank = unknown."""
+    seen_open = set()
+    for (from_square, direction) in course_map.open:
+        seen_open.add(next_square(from_square, direction))
+    squares = course_map.visited | course_map.solid | seen_open
+    easts = [s[0] for s in squares]
+    norths = [s[1] for s in squares]
+    for north in range(max(norths), min(norths) - 1, -1):
         row = ""
-        for x in range(min(xs), max(xs) + 1):
-            c = (x, y)
-            if c == pos:
+        for east in range(min(easts), max(easts) + 1):
+            here = (east, north)
+            if here == square:
                 row += "R"
-            elif c in maze.visited:
+            elif here in course_map.visited:
                 row += "o"
-            elif c in maze.solid:
+            elif here in course_map.solid:
                 row += "#"
-            elif c in seen_open:
+            elif here in seen_open:
                 row += "."
             else:
                 row += " "
         print("map |" + row + "|")
 
 
-def take_red(cell, yaw, how):
-    """Consume the red flag after a move: (start cell, yaw, kind of move) if
-    red went under the sensor during it, else None. Clearing it after every
-    move keeps a later sighting from being pinned on the wrong move."""
-    global _red_seen
-    if not _red_seen:
-        return None
-    _red_seen = False
-    print("explore: red seen during a " + how + " from " + str(cell))
-    return (cell, yaw, how)
-
-
 async def explore():
-    """Maze search: keep driving to the nearest cell not visited yet until
-    green and then red are found.
-
-    The rover must start square to the course, facing up, on its bottom edge
-    (see EXPLORE_DOWN_CM). Before driving along an edge it has not seen,
-    it looks, which also maps a line of cells. A leg that stops early is
-    backed out and that edge marked blocked.
-
-    Red seen before green (RED_NEEDS_GREEN) is remembered as the move that
-    crossed it. Once green is done the rover drives back and repeats that
-    move - going back to the cell alone is not enough when red was only
-    reached by nosing up to a wall.
-    """
-    print("=== EXPLORE START === cell=" + str(int(CELL_CM * 10) / 10) + "cm")
-    motion_sensor.reset_yaw(0)
-    start_ms = time.ticks_ms() if time else 0
-    if RUN_TIME_LIMIT_S and not time:
-        print("WARNING: no time module - RUN_TIME_LIMIT_S is ignored")
-    maze = Maze()
-    pos = (0, 0)
-    heading = 0
-    red_spot = None      # (cell, yaw, how) of the move that crossed red
-
+    """Search the whole course, square by square. Start it facing NORTH."""
+    print("=== EXPLORER START ===")
+    course_map = CourseMap()
+    square = (0, 0)
+    heading_for = None
     while True:
-        if (RUN_TIME_LIMIT_S and time
-                and time.ticks_diff(time.ticks_ms(), start_ms) > RUN_TIME_LIMIT_S * 1000):
-            print("explore: time limit reached - stopping")
-            print_map(maze, pos)
+        # 1. Plan. target_heading is the way the rover faces now.
+        direction, target = next_move(course_map, square, target_heading)
+        if direction is None:
+            print("explore: visited every square it can reach - finished")
+            print_map(course_map, square)
             return
+        if target != heading_for:
+            print("explore: heading for square " + str(target))
+            heading_for = target
 
-        target = None
-        forced = None
-        if _checkpoint_done and red_spot is not None:
-            cell, ryaw, how = red_spot
-            if pos != cell:
-                target = cell                # head back to where red was crossed
-            else:
-                print("explore: back where red was seen - repeating the " + how)
-                red_spot = None              # if this fails too, search the rest
-                if how == "spin":
-                    await radar_sweep()      # colour is read all the way round
-                    continue
-                if how == "touch":
-                    maze.touched.discard((pos, ryaw))
-                    n_free, d = await look(maze, pos, ryaw)
-                    heading = ryaw
-                    if n_free == 0:
-                        await touch_wall(maze, pos, ryaw, d - APPROACH_STOP_CM)
-                        continue
-                forced = ryaw                # "leg": drive the same leg again
+        # 2. Look first - unless this move is already known to be open, or
+        # leads to a square the rover has stood in before (so there is room).
+        ahead = next_square(square, direction)
+        been_there = ahead in course_map.visited
+        if (square, direction) not in course_map.open and not been_there:
+            if not await turn_to(direction):
+                # No room to swing round to face that way from here.
+                course_map.blocked.add((square, direction))
+                continue
+            free, distance = await look(course_map, square, direction)
+            if free == 0:
+                # A wall right ahead: check next to it for a patch. This
+                # happens once per wall, as look() has now marked the move
+                # blocked, so the rover will not look this way again.
+                await check_by_wall(direction)
+                continue       # the map has changed, so plan again
 
-        yaw = forced if forced is not None else plan_step(maze, pos, heading, target)
-        if yaw is None:
-            print("explore: every reachable cell visited - "
-                  + ("red" if _checkpoint_done else "green") + " not found")
-            print_map(maze, pos)
-            return
-
-        if (pos, yaw) not in maze.open:
-            n_free, d = await look(maze, pos, yaw)
-            heading = yaw
-            spot = take_red(pos, yaw, "spin")
-            red_spot = red_spot or spot
-            if n_free == 0:
-                await touch_wall(maze, pos, yaw, d - APPROACH_STOP_CM)
-                spot = take_red(pos, yaw, "touch")
-                red_spot = red_spot or spot
-                continue                 # the map changed - plan again
-
-        start = pos
-        reason, _ = await drive_leg(yaw)
-        heading = yaw
-        nxt = neighbour(pos, yaw)
-        if reason == DRIVE_DISTANCE:
-            maze.open.add((pos, yaw))
-            pos = nxt
-            maze.visited.add(pos)
-            spot = take_red(start, yaw, "leg")
+        # 3. Move one square. If it could not - something in the way, or no
+        # room to turn - that move is marked blocked and it plans again.
+        if await step(direction, been_there) == "done":
+            course_map.open.add((square, direction))
+            square = ahead
+            course_map.visited.add(square)
         else:
-            await back_up(wheel_degrees())
-            maze.closed.add((pos, yaw))
-            maze.open.discard((pos, yaw))
-            print("explore: cannot drive " + str(pos) + " -> " + str(nxt)
-                  + " (" + DRIVE_NAMES[reason] + "), backed out")
-            spot = take_red(start, yaw, "touch")
-        red_spot = red_spot or spot
+            course_map.blocked.add((square, direction))
+            course_map.open.discard((square, direction))
 
-# ============================================================
-#BENCH TESTS
-# ============================================================
 
-async def test_radar():
-    """Bench test for radar_sweep(): spin, print the map, wait, repeat.
+# ======================================================================
+# YOUR PROGRAM
+# ======================================================================
 
-    Prints 4 lines of 90 deg each, in sweep order, as whole cm per slice.
-    The label is the slice-centre angle range relative to where the rover
-    faced when the sweep started, in yaw space: + is left, - is right,
-    +/-180 is behind. 200 means no echo anywhere in that slice; -- means
-    no sample landed in it.
+async def my_program():
+    # Write your own route here. This example drives a 30 cm square.
+    for side in range(4):
+        await drive_forward(30)
+        await turn_left(90)
+    # Another example: drive until a wall is 10 cm away, then turn to face WEST.
+    # await drive_to_wall(10)
+    # await turn_to(WEST)
 
-    Kept this short because the SPIKE App console only copies part of a long
-    printout and drops the line breaks - the [range] label on each line keeps
-    it readable even when the lines run together.
-    """
-    def centre(i):
-        angle = i * SLICE_DEG + SLICE_DEG // 2
-        if angle > 180:
-            angle -= 360
-        return angle
 
-    print("=== RADAR TEST ===")
-    motion_sensor.reset_yaw(0)   # so the [room] line's "up" is where it faced at start
-    per_line = 90 // SLICE_DEG
-    while True:
-        start_yaw, slices = await radar_sweep()
-        for first in range(0, len(slices), per_line):
-            values = []
-            for cm in slices[first:first + per_line]:
-                values.append("--" if cm is None else str(int(cm + 0.5)))
-            print("[" + str(centre(first)) + ".." + str(centre(first + per_line - 1))
-                  + "] " + " ".join(values))
-        # What the navigation sees: clearance along each room direction,
-        # ? = only missed echoes there.
-        room = []
-        for name, yaw in [("up", 0), ("left", 90), ("down", 180), ("right", -90)]:
-            cm = room_clearance(start_yaw, slices, yaw)
-            room.append(name + "=" + ("?" if cm is None else str(int(cm + 0.5))))
-        print("[room] " + " ".join(room))
-        await runloop.sleep_ms(1000)   # let it settle before measuring the overshoot
-        print("radar: ended " + str(heading_difference(get_current_yaw(), start_yaw))
-              + " deg past a full turn; next sweep in 4s")
-        await runloop.sleep_ms(4000)
-
-async def test_turns():
-    """Bench test for turn_to_yaw(): left, right and 180 deg turns, forever.
-
-    One line per turn once it has settled. err is where it ended relative to
-    the target: + means it stopped LEFT of the target, - means RIGHT. So on a
-    left turn + is overshoot; on a right turn - is overshoot.
-    """
-    print("=== TURN TEST ===")
-    motion_sensor.reset_yaw(0)
-    while True:
-        # 0->90 left, 90->0 right, 0->-90 right, -90->0 left, then two 180s
-        for target in [90, 0, -90, 0, 180, 0]:
-            await turn_to_yaw(target)
-            await runloop.sleep_ms(1000)   # let it settle before measuring
-            yaw = get_current_yaw()
-            print("[turn " + str(target) + "] settled=" + str(yaw)
-                  + " err=" + str(heading_difference(yaw, target)))
-        print("turn test: next round in 3s")
-        await runloop.sleep_ms(3000)
-
-async def test_legs():
-    """Bench test for drive_leg(): drive a square - up, left, down, right.
-
-    It should end roughly where it started. One drive_leg line per leg says
-    why the leg ended (distance = full leg, obstacle, timeout = stuck) and how
-    far the wheels actually turned.
-    """
-    print("=== LEG TEST ===")
-    motion_sensor.reset_yaw(0)
-    while True:
-        for yaw in [0, 90, 180, -90]:
-            await drive_leg(yaw)
-            await runloop.sleep_ms(500)
-        await turn_to_yaw(0)
-        print("leg test: square done, next in 5s")
-        await runloop.sleep_ms(5000)
-
-# ============================================================
-#ENTRY POINT
-# ============================================================
-
-async def run_program(program):
-    """Run program until GOAL_COLOR ends it.
-
-    GoalReached is raised from inside whatever loop saw red, with the motors
-    already stopped, so catching it here is all it takes to end the run.
-    """
-    try:
-        await program()
-    except GoalReached:
-        print("=== RUN COMPLETE: goal reached ===")
-
-# Run exactly ONE of these. explore is the maze search, main the old staircase;
-# the rest are bench tests.
+# Choose what runs: exactly ONE of these lines must have no # in front.
+# Run setup_check first on a new rover.
+# runloop.run(run_program(my_program))
+# runloop.run(run_program(setup_check))
+# runloop.run(run_program(follow_wall))
 runloop.run(run_program(explore))
-# runloop.run(run_program(main))
-# runloop.run(run_program(test_radar))
-# runloop.run(run_program(test_turns))
-# runloop.run(run_program(test_legs))
