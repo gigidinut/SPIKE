@@ -6,6 +6,7 @@
 # drive and turn, including the autonomous searches, without you calling
 # anything.
 #
+#@only explorer
 # Colours that must be found in a set ORDER: use explore(find=...) from the
 # Maze explorer instead (see the MAZE EXPLORER section). Once your program
 # uses it, on_colour_found() no longer runs. A colour only counts when an
@@ -15,6 +16,7 @@
 # The rover also remembers where it first saw each colour - even one it did
 # not react to - so the explorer can go straight back to it later.
 #
+#@end
 #   on_colour_found(colour)   what to do on a colour - WRITE YOUR OWN ACTIONS HERE
 #   read_colour()             the colour under the sensor right now
 #   found_colours             a list of the colours found so far
@@ -67,11 +69,13 @@ async def on_colour_found(colour):
     #    think the rover is where it stopped. Other motors, the lights and
     #    sounds are fine.
     #
+    #@only explorer
     #    Need to drive, or find colours in a set order? Use explore(find=...)
     #    instead (see the MAZE EXPLORER section): the lines after it in your
     #    program are your actions, and they may drive. This function then
     #    does not run at all.
     #
+    #@end
     # ======================================================================
     print("COLOUR: found " + colour_name(colour) + ", pausing "
           + str(COLOUR_PAUSE_MS // 1000) + " s")

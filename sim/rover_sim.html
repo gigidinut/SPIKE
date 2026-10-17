@@ -1601,7 +1601,7 @@ function drawEditor() {
     const [px, py] = R.pivot;
     c.strokeStyle = colors.red; c.lineWidth = 2; c.beginPath();
     c.moveTo(ex(px) - 7, ey(py)); c.lineTo(ex(px) + 7, ey(py)); c.moveTo(ex(px), ey(py) - 7); c.lineTo(ex(px), ey(py) + 7); c.stroke();
-    c.fillStyle = colors.red; c.textAlign = 'left'; c.fillText('turns here', ex(px) + 9, ey(py) - 9);
+    c.fillStyle = colors.red; c.textAlign = 'center'; c.fillText('turns here', ex(px), ey(py) + 16);
   }
   c.fillStyle = colors.muted; c.textAlign = 'center'; c.font = '700 12px "Barlow Condensed", sans-serif';
   c.fillText('FRONT', ev.w / 2, 10); c.fillText('BACK', ev.w / 2, ev.h - 9);

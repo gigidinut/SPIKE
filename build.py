@@ -45,15 +45,26 @@ import time
 from hub import port, motion_sensor, button"""
 
 
-def read_module(name):
+def read_module(name, included):
     """Split a module file into its #@title, #@about, #@constants, #@settings,
     #@tuning and #@code parts. Constants go before the settings, so settings
     can use them. Settings are the ones every team must look at; tuning
-    settings go in a separate FINE TUNING block further down."""
+    settings go in a separate FINE TUNING block further down.
+
+    Lines between "#@only explorer" and "#@end" (indented or not) are left
+    out unless the package includes the explorer module, so no comment sends
+    a team to a section their file does not have."""
     parts = {"title": "", "about": [], "constants": [], "settings": [], "tuning": [], "code": []}
     part = None
+    skipping = False
     with open(os.path.join(MODULE_DIR, name + ".py"), encoding="utf-8") as f:
         for line in f.read().splitlines():
+            only = re.match(r"\s*#@(only|end)\s*(\w*)\s*$", line)
+            if only:
+                skipping = only.group(1) == "only" and only.group(2) not in included
+                continue
+            if skipping:
+                continue
             marker = re.match(r"#@(\w+)\s*(.*)$", line)
             if marker:
                 part = marker.group(1)
@@ -121,7 +132,7 @@ def program_section(included):
 def build(package, team):
     title, sections = PACKAGES[package]
     included = set(sections)
-    modules = {name: read_module(name) for name in sections}
+    modules = {name: read_module(name, included) for name in sections}
 
     out = banner("ROVER SOFTWARE - " + title.upper() + (" - " + team if team else ""))
     out += [
