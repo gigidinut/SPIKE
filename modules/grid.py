@@ -112,8 +112,8 @@ async def check_by_wall(direction):
     distance = await measure_distance()
     if distance == -1 or distance > STEP_CM + WALL_STOP_CM:
         return       # no wall close ahead
-    # How far the wall is from the middle of the wheels. distance is
-    # measured from the distance sensor, which sits in front of them.
+    # How far the wall is from the turning point. distance is measured
+    # from the distance sensor, which sits in front of it.
     wall_cm = distance + DISTANCE_SENSOR_POSITION_CM
     if COLOUR_SENSOR_POSITION_CM >= 0:
         # Drive forward until the front of the rover is WALL_CHECK_GAP_CM

@@ -100,7 +100,7 @@ def read_colour():
 def colour_sensor_position():
     """Where the colour sensor is over the floor right now, in cm from the
     start: (cm east, cm north). It sits COLOUR_SENSOR_POSITION_CM in front of
-    the middle of the wheels - behind them if that number is negative."""
+    the turning point - behind it if that number is negative."""
     angle = gyro_heading() * math.pi / 180      # degrees to radians
     east = position_east_cm - math.sin(angle) * COLOUR_SENSOR_POSITION_CM
     north = position_north_cm + math.cos(angle) * COLOUR_SENSOR_POSITION_CM

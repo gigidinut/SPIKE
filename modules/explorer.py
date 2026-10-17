@@ -241,7 +241,7 @@ async def look(course_map, square, direction):
         course_map.open.discard((square, direction))
         # Is the wall so close that the rover could never stand in the next
         # square, even sideways? The middle of that square is STEP_CM ahead
-        # of the wheels, and the distance sensor is already
+        # of the turning point, and the distance sensor is already
         # DISTANCE_SENSOR_POSITION_CM ahead.
         ahead = next_square(square, direction)
         wall_from_middle = distance - (STEP_CM - DISTANCE_SENSOR_POSITION_CM)

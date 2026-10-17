@@ -51,16 +51,23 @@ LEFT_MOTOR_DIRECTION = -1
 RIGHT_MOTOR_DIRECTION = 1
 
 WHEEL_DIAMETER_CM = 8.3        # measure across the tyre; setup_check fine-tunes it
+WHEEL_GEAR_RATIO = 1           # motor turns for one wheel turn: 1 if the wheel is on the motor,
+                               # else teeth on the wheel's gear / teeth on the motor's gear
+
+# Lengths along the rover are measured from its TURNING POINT: the spot
+# that stays still when it spins on the spot. With two drive wheels and a
+# caster, it is half way between the drive wheels. With four or more wheels
+# that cannot swivel, it is somewhere between them - setup_check test 6
+# shows how to find it.
 
 # The size of the rover seen from above, in cm. Measure front and back from
-# the MIDDLE OF THE WHEELS (the line through the centres of the two wheels)
-# to the part that sticks out furthest.
+# the turning point to the part that sticks out furthest.
 ROVER_WIDTH_CM = 15
 ROVER_FRONT_CM = 7
 ROVER_BACK_CM = 11
 
-# Where the sensors sit along the rover, in cm from the middle of the wheels.
-# Positive = in front of the wheels, negative = behind them.
+# Where the sensors sit along the rover, in cm from the turning point.
+# Positive = in front of it, negative = behind it.
 DISTANCE_SENSOR_POSITION_CM = 7
 COLOUR_SENSOR_POSITION_CM = -10
 
@@ -170,13 +177,16 @@ def wheel_degrees():
 
 
 def cm_to_wheel_degrees(cm):
-    """One full turn of a wheel (360 degrees) rolls the rover forward by the
-    wheel's circumference, which is pi x the diameter."""
-    return cm / (math.pi * WHEEL_DIAMETER_CM) * 360
+    """How many degrees the motors turn to roll the rover cm forward.
+
+    One full turn of a wheel (360 degrees) rolls the rover forward by the
+    wheel's circumference, which is pi x the diameter. With gears, the motor
+    turns WHEEL_GEAR_RATIO times for each turn of the wheel."""
+    return cm / (math.pi * WHEEL_DIAMETER_CM) * 360 * WHEEL_GEAR_RATIO
 
 
 def wheel_degrees_to_cm(degrees):
-    return degrees / 360 * math.pi * WHEEL_DIAMETER_CM
+    return degrees / WHEEL_GEAR_RATIO / 360 * math.pi * WHEEL_DIAMETER_CM
 
 
 def gyro_heading():
@@ -247,6 +257,7 @@ def check_setup_settings():
     if RIGHT_MOTOR_DIRECTION != 1 and RIGHT_MOTOR_DIRECTION != -1:
         setting_problem("RIGHT_MOTOR_DIRECTION is " + str(RIGHT_MOTOR_DIRECTION) + ", but it should be 1 or -1")
     check_number("WHEEL_DIAMETER_CM", WHEEL_DIAMETER_CM, 2, 20)
+    check_number("WHEEL_GEAR_RATIO", WHEEL_GEAR_RATIO, 0.1, 10)
     check_number("ROVER_WIDTH_CM", ROVER_WIDTH_CM, 5, 40)
     check_number("ROVER_FRONT_CM", ROVER_FRONT_CM, 0, 40)
     check_number("ROVER_BACK_CM", ROVER_BACK_CM, 0, 40)
@@ -430,12 +441,41 @@ async def check_turns():
     await wait_for_button()
     motion_sensor.reset_yaw(0)
     target_heading = 0
+    reset_wheel_counters()
     await turn_to(WEST)
     await runloop.sleep_ms(1000)
+    # How far the motors turned for that quarter turn - scaled to exactly
+    # 90 degrees, as the turn may have stopped a little off.
+    turned = abs(gyro_heading())
+    if turned > 45:
+        quarter = round(wheel_degrees() * 90 / turned)
+    else:
+        quarter = None
     await turn_to(NORTH)
     print("   Both turns should look like neat quarter turns, and the 'turn:' lines")
     print("   above should stop within " + str(TURN_ACCURACY) + " degrees of the target.")
     print("   Turns wobble or overshoot a lot? Lower TURN_SLOW_SPEED.")
+    if quarter is not None:
+        print("   A quarter turn took " + str(quarter) + " motor degrees. For the simulator:")
+        print("   type that into 'Motor degrees for a quarter turn' on its Rover tab.")
+
+
+async def check_turning_point():
+    global target_heading
+    print("TURNING POINT. Put a mark on the floor at the very front of the rover,")
+    print("   in the middle. Press RIGHT: the rover turns half a turn.")
+    await wait_for_button()
+    motion_sensor.reset_yaw(0)
+    target_heading = 0
+    await turn_to(SOUTH)
+    print("   Now mark the front of the rover again, and measure between the marks.")
+    print("   The turning point is half that far behind the front, so set")
+    print("   ROVER_FRONT_CM to half of it. Measure ROVER_BACK_CM and the SENSOR")
+    print("   POSITION settings from that point too.")
+    print("   ROVER_FRONT_CM is " + str(ROVER_FRONT_CM) + " now, so the marks should be "
+          + str(2 * ROVER_FRONT_CM) + " cm apart.")
+    print("   For the simulator: type ROVER_FRONT_CM into 'Turning point, cm behind")
+    print("   the front' on its Rover tab.")
 
 
 async def check_distance_sensor():
@@ -452,9 +492,9 @@ async def check_distance_sensor():
             print("   " + str(cm) + " cm")
         if await right_pressed_within(500):
             break
-    print("   Now stand the rover facing a wall. Measure from the wall to the MIDDLE")
-    print("   OF THE WHEELS (the centre of a wheel - not the front of the rover or")
-    print("   the sensor) and make that exactly 30 cm. Press RIGHT to measure.")
+    print("   Now stand the rover facing a wall. Measure from the wall to the TURNING")
+    print("   POINT (see the turning point test - not the front of the rover or the")
+    print("   sensor) and make that exactly 30 cm. Press RIGHT to measure.")
     await wait_for_button()
     readings = []
     for i in range(5):
@@ -471,8 +511,8 @@ async def check_distance_sensor():
     print("   The sensor reads " + str(cm) + " cm, so DISTANCE_SENSOR_POSITION_CM should")
     print("   be about " + str(suggested) + ". It is set to " + str(DISTANCE_SENSOR_POSITION_CM) + ".")
     if abs(suggested - DISTANCE_SENSOR_POSITION_CM) > 3:
-        print("   That is quite different. Check the 30 cm went to the middle of the")
-        print("   wheels, not to the front of the sensor - then press LEFT to try again.")
+        print("   That is quite different. Check the 30 cm went to the turning point,")
+        print("   not to the front of the sensor - then press LEFT to try again.")
 
 
 async def check_colour_sensor():
@@ -498,7 +538,7 @@ async def setup_check():
     takes effect when you run the program again.
     """
     checks = [check_left_wheel, check_right_wheel, check_gyro, check_drive,
-              check_turns, check_distance_sensor, check_colour_sensor]
+              check_turns, check_turning_point, check_distance_sensor, check_colour_sensor]
     print("=== SETUP CHECK ===")
     print("Use the LEFT and RIGHT buttons on the hub to go through the tests.")
     number = 0
@@ -551,7 +591,7 @@ SETTINGS_CHECKS.append(check_movement_settings)
 target_heading = 0     # the direction the rover is meant to be facing
 last_drive_cm = 0      # how far the last drive went (see cm_driven)
 
-# Where the rover is (the middle of its wheels), in cm from where it started:
+# Where the rover is (its turning point), in cm from where it started:
 # EAST is to the right of the start, NORTH is straight ahead of it. Every
 # drive adds the distance it goes, in the direction the gyro says the rover
 # faces. Turning on the spot does not move it.
@@ -985,7 +1025,7 @@ def read_colour():
 def colour_sensor_position():
     """Where the colour sensor is over the floor right now, in cm from the
     start: (cm east, cm north). It sits COLOUR_SENSOR_POSITION_CM in front of
-    the middle of the wheels - behind them if that number is negative."""
+    the turning point - behind it if that number is negative."""
     angle = gyro_heading() * math.pi / 180      # degrees to radians
     east = position_east_cm - math.sin(angle) * COLOUR_SENSOR_POSITION_CM
     north = position_north_cm + math.cos(angle) * COLOUR_SENSOR_POSITION_CM
@@ -1126,8 +1166,8 @@ async def check_by_wall(direction):
     distance = await measure_distance()
     if distance == -1 or distance > STEP_CM + WALL_STOP_CM:
         return       # no wall close ahead
-    # How far the wall is from the middle of the wheels. distance is
-    # measured from the distance sensor, which sits in front of them.
+    # How far the wall is from the turning point. distance is measured
+    # from the distance sensor, which sits in front of it.
     wall_cm = distance + DISTANCE_SENSOR_POSITION_CM
     if COLOUR_SENSOR_POSITION_CM >= 0:
         # Drive forward until the front of the rover is WALL_CHECK_GAP_CM
@@ -1488,7 +1528,7 @@ async def look(course_map, square, direction):
         course_map.open.discard((square, direction))
         # Is the wall so close that the rover could never stand in the next
         # square, even sideways? The middle of that square is STEP_CM ahead
-        # of the wheels, and the distance sensor is already
+        # of the turning point, and the distance sensor is already
         # DISTANCE_SENSOR_POSITION_CM ahead.
         ahead = next_square(square, direction)
         wall_from_middle = distance - (STEP_CM - DISTANCE_SENSOR_POSITION_CM)

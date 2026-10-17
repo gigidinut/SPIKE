@@ -215,9 +215,9 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
         <div class="pgroup"><h3>Match my real rover</h3>
           <p class="pane-note">Optional. Leave a box empty to use the simulator's estimate.</p>
           <div class="prow"><label for="mTurnPoint">Turning point, cm behind the front</label><input type="number" step="any" id="mTurnPoint">
-            <div class="help">Mark the floor at the very front of the rover, in the middle. Spin it half a turn on the spot and mark the front again. The turning point is half way between the two marks.</div></div>
+            <div class="help">setup_check test 6 finds it: mark the floor at the very front of the rover, in the middle, let it spin half a turn, and mark the front again. The turning point is half way between the two marks.</div></div>
           <div class="prow"><label for="mQuarter">Motor degrees for a quarter turn</label><input type="number" step="any" id="mQuarter">
-            <div class="help">How far each drive motor turns while the rover spins 90 degrees on the spot. Read it from the motor's position in the SPIKE App, before and after.</div></div>
+            <div class="help">How far each drive motor turns while the rover spins 90 degrees on the spot. setup_check test 5 prints it.</div></div>
         </div>
         <label class="field"><span>Rover as JSON (cm; x to the right, y forward)</span><textarea id="roverJson" spellcheck="false"></textarea></label>
         <div class="btnrow"><button type="button" id="btnApplyRover">Apply JSON</button><button type="button" id="btnCopyRover">Copy JSON</button></div>

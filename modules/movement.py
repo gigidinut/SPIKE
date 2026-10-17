@@ -46,7 +46,7 @@ SETTINGS_CHECKS.append(check_movement_settings)
 target_heading = 0     # the direction the rover is meant to be facing
 last_drive_cm = 0      # how far the last drive went (see cm_driven)
 
-# Where the rover is (the middle of its wheels), in cm from where it started:
+# Where the rover is (its turning point), in cm from where it started:
 # EAST is to the right of the start, NORTH is straight ahead of it. Every
 # drive adds the distance it goes, in the direction the gyro says the rover
 # faces. Turning on the spot does not move it.

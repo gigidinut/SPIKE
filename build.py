@@ -201,6 +201,15 @@ def main():
         out = os.path.join(HERE, "builds", slug + ".py")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     text = build(chosen, args.team)
+    # Rebuilding must not wipe the team's own code: keep the YOUR PROGRAM
+    # section of the file being replaced, if it has one.
+    marker = "\n".join(banner("YOUR PROGRAM"))
+    if os.path.exists(out):
+        with open(out, encoding="utf-8") as f:
+            old = f.read().replace("\r\n", "\n")
+        if marker in old:
+            text = text[:text.index(marker)] + old[old.index(marker):]
+            print("Kept the YOUR PROGRAM section from the old " + out)
     with open(out, "w", encoding="utf-8", newline="\n") as f:
         f.write(text)
     print("Wrote " + out + " (" + str(text.count("\n")) + " lines)")
