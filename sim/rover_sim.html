@@ -107,6 +107,9 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
 .msg { font-size: 12.5px; min-height: 1.3em; margin: 0; }
 .msg.bad { color: var(--bad); }
 .msg.ok { color: var(--ok); }
+.rsum { display: grid; gap: 3px; font-size: 12.5px; background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.rsum b { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.03em; }
+.rsum .warn { color: var(--warn); }
 .srcline { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 </style>
 </head>
@@ -168,6 +171,7 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
       <div class="tabs" role="tablist">
         <button type="button" role="tab" id="tab-log-btn" aria-selected="true" aria-controls="tab-log">Log</button>
         <button type="button" role="tab" id="tab-params-btn" aria-selected="false" aria-controls="tab-params">Parameters</button>
+        <button type="button" role="tab" id="tab-rover-btn" aria-selected="false" aria-controls="tab-rover">Rover</button>
         <button type="button" role="tab" id="tab-course-btn" aria-selected="false" aria-controls="tab-course">Course</button>
         <button type="button" role="tab" id="tab-code-btn" aria-selected="false" aria-controls="tab-code">Code</button>
       </div>
@@ -192,8 +196,33 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
         <p class="pane-note">Constants are read from your file each Run. A change here overrides the value for the simulation only; your file is not modified.</p>
         <input type="search" id="paramFilter" placeholder="Filter constants" aria-label="Filter constants">
         <div class="pgroup"><h3>From your file</h3><div class="plist" id="constParams"><p class="pane-note">Loads with the file.</p></div></div>
-        <div class="pgroup"><h3>Rover and sensor model</h3><div id="physParams"></div></div>
+        <div class="pgroup"><h3>Sensor and motion model</h3><div id="physParams"></div></div>
         <div class="btnrow"><button type="button" id="btnParamReset">Clear all overrides</button></div>
+      </div>
+
+      <div class="tabpane" id="tab-rover" role="tabpanel" hidden>
+        <p class="pane-note">The simulated rover, seen from above, in cm. Make it match the rover you built: its outline, which wheels the motors drive, and where the sensors are.</p>
+        <label class="field"><span>Preset</span>
+          <select id="roverPreset">
+            <option value="example">Two drive wheels and a caster</option>
+            <option value="skid4">Four wheels, two motors (skid steer)</option>
+            <option value="skid6">Six wheels, two motors (skid steer)</option>
+            <option value="reardrive">Rear drive, two free front wheels</option>
+          </select>
+        </label>
+        <div class="btnrow"><button type="button" id="btnRoverPreset">Load preset</button></div>
+        <div class="rsum" id="roverSummary"></div>
+        <div class="pgroup"><h3>Match my real rover</h3>
+          <p class="pane-note">Optional. Leave a box empty to use the simulator's estimate.</p>
+          <div class="prow"><label for="mTurnPoint">Turning point, cm behind the front</label><input type="number" step="any" id="mTurnPoint">
+            <div class="help">Mark the floor at the very front of the rover, in the middle. Spin it half a turn on the spot and mark the front again. The turning point is half way between the two marks.</div></div>
+          <div class="prow"><label for="mQuarter">Motor degrees for a quarter turn</label><input type="number" step="any" id="mQuarter">
+            <div class="help">How far each drive motor turns while the rover spins 90 degrees on the spot. Read it from the motor's position in the SPIKE App, before and after.</div></div>
+        </div>
+        <label class="field"><span>Rover as JSON (cm; x to the right, y forward)</span><textarea id="roverJson" spellcheck="false"></textarea></label>
+        <div class="btnrow"><button type="button" id="btnApplyRover">Apply JSON</button><button type="button" id="btnCopyRover">Copy JSON</button></div>
+        <p class="msg" id="roverMsg"></p>
+        <p class="pane-note">Measure from any point you like; the presets use the middle of the drive wheels. <code>body</code> is a list of boxes [x0, x1, y0, y1]. Each wheel has <code>x</code>, <code>y</code> and diameter <code>d</code>; a driven wheel also has the motor's <code>port</code>, <code>forward</code> (the speed sign that rolls it forward, 1 or -1) and, if it is geared, <code>gear</code> (motor turns per wheel turn). Wheels that swivel, and ball casters, have <code>"caster": true</code>. Sensors have <code>type</code> ("distance" or "colour"), <code>port</code>, <code>x</code>, <code>y</code> and, for a sensor that points sideways, <code>angle</code> (degrees, + is to the left).</p>
       </div>
 
       <div class="tabpane" id="tab-course" role="tabpanel" hidden>
@@ -424,13 +453,24 @@ _module("motor_pair", PAIR_1=0, PAIR_2=1, PAIR_3=2, pair=_pair,
 
 
 # ---- Sensors ----
+def _no_sensor(kind, p):
+    # The hub raises an error when nothing is plugged into the port.
+    raise OSError(19, "ENODEV - no " + kind + " sensor on port " + _L[p]
+                  + " (see the simulator's Rover tab)")
+
 def _distance(p):
     _reading()
-    return int(_sim.distance())
+    mm = _sim.distance(_L[p])
+    if mm is None:
+        _no_sensor("distance", p)
+    return int(mm)
 
 def _colour(p):
     _reading()
-    return int(_sim.color())
+    c = _sim.color(_L[p])
+    if c is None:
+        _no_sensor("colour", p)
+    return int(c)
 
 _REFLECTION = {6: 25, 9: 45, 10: 90}
 _RGBI = {6: (150, 500, 200, 400), 9: (700, 150, 120, 450), 10: (900, 900, 900, 1000)}
@@ -574,19 +614,8 @@ def _snapshot():
 (() => {
 'use strict';
 
-/* ===================== Rover and sensor model ===================== */
+/* ===================== Sensor and motion model ===================== */
 const PHYS_PARAMS = [
-  ['leftMotorPort', 'B', 'Port of the LEFT drive motor', ['A', 'B', 'C', 'D', 'E', 'F']],
-  ['rightMotorPort', 'A', 'Port of the RIGHT drive motor', ['A', 'B', 'C', 'D', 'E', 'F']],
-  ['leftMotorForward', -1, 'Speed sign that turns the LEFT wheel forward (-1 when mounted mirror-image)', [-1, 1]],
-  ['rightMotorForward', 1, 'Speed sign that turns the RIGHT wheel forward', [1, -1]],
-  ['wheelDiameter', 8.3, 'Wheel diameter, cm'],
-  ['trackWidth', 12.8, 'Distance between the wheel centres, cm (sets the spin rate)'],
-  ['bodyWidth', 15, 'Rover width, cm'],
-  ['bodyFront', 7, 'Front of the rover, cm ahead of the wheel centres'],
-  ['bodyBack', 11, 'Back of the rover, cm behind the wheel centres'],
-  ['sonarOffset', 7, 'Distance sensor ahead of the wheel centres, cm'],
-  ['colorOffset', -10, 'Colour sensor ahead of the wheel centres, cm (negative is behind)'],
   ['coneHalf', 12, 'Distance sensor half-cone, deg'],
   ['maxIncidence', 40, 'Echo is lost beyond this angle off square, deg'],
   ['sonarRange', 200, 'Distance sensor range, cm'],
@@ -598,6 +627,193 @@ const PHYS_PARAMS = [
 ];
 const P = {};
 const COLOR_GREEN = 6, COLOR_RED = 9, COLOR_WHITE = 10;
+
+/* ===================== Rover description (cm, x right, y forward) ===================== */
+// The presets measure from the middle of the drive wheels. Students can
+// measure from anywhere: deriveRover() works out where the rover turns and
+// moves everything so that point is the origin.
+const ROVER_PRESETS = {
+  example: {
+    name: 'Two drive wheels and a caster',
+    body: [[-7.5, 7.5, -11, 7]],
+    wheels: [{ x: -6.4, y: 0, d: 8.3, port: 'B', forward: -1 }, { x: 6.4, y: 0, d: 8.3, port: 'A', forward: 1 },
+             { x: 0, y: -8.5, d: 2.5, caster: true }],
+    sensors: [{ type: 'distance', port: 'C', x: 0, y: 7 }, { type: 'colour', port: 'D', x: 0, y: -10 }],
+    measured: { turnPointBehindFront: null, quarterTurnWheelDegrees: null },
+  },
+  skid4: {
+    name: 'Four wheels, two motors (skid steer)',
+    body: [[-8.5, 8.5, -11, 9]],
+    wheels: [{ x: -7.2, y: 5, d: 5.6, port: 'B', forward: -1 }, { x: -7.2, y: -5, d: 5.6, port: 'B', forward: -1 },
+             { x: 7.2, y: 5, d: 5.6, port: 'A', forward: 1 }, { x: 7.2, y: -5, d: 5.6, port: 'A', forward: 1 }],
+    sensors: [{ type: 'distance', port: 'C', x: 0, y: 9 }, { type: 'colour', port: 'D', x: 0, y: -10 }],
+    measured: { turnPointBehindFront: null, quarterTurnWheelDegrees: null },
+  },
+  skid6: {
+    name: 'Six wheels, two motors (skid steer)',
+    body: [[-8.5, 8.5, -11, 11]],
+    wheels: [{ x: -7.2, y: 7, d: 5.6, port: 'B', forward: -1 }, { x: -7.2, y: 0, d: 5.6, port: 'B', forward: -1 },
+             { x: -7.2, y: -7, d: 5.6, port: 'B', forward: -1 }, { x: 7.2, y: 7, d: 5.6, port: 'A', forward: 1 },
+             { x: 7.2, y: 0, d: 5.6, port: 'A', forward: 1 }, { x: 7.2, y: -7, d: 5.6, port: 'A', forward: 1 }],
+    sensors: [{ type: 'distance', port: 'C', x: 0, y: 11 }, { type: 'colour', port: 'D', x: 0, y: -10 }],
+    measured: { turnPointBehindFront: null, quarterTurnWheelDegrees: null },
+  },
+  reardrive: {
+    name: 'Rear drive, two free front wheels',
+    body: [[-8.5, 8.5, -8, 14]],
+    wheels: [{ x: -7.2, y: 0, d: 5.6, port: 'B', forward: -1 }, { x: 7.2, y: 0, d: 5.6, port: 'A', forward: 1 },
+             { x: -7.2, y: 10, d: 5.6 }, { x: 7.2, y: 10, d: 5.6 }],
+    sensors: [{ type: 'distance', port: 'C', x: 0, y: 14 }, { type: 'colour', port: 'D', x: 0, y: -8 }],
+    measured: { turnPointBehindFront: null, quarterTurnWheelDegrees: null },
+  },
+};
+const PORTS = ['A', 'B', 'C', 'D', 'E', 'F'];
+const SIDE_GAP = 0.25;     // a wheel closer than this to the middle line is on neither side
+let rover = null;          // the description, as the student wrote it
+let R = null;              // worked out from it by deriveRover()
+
+function validRover(r) {
+  const num = v => typeof v === 'number' && Number.isFinite(v);
+  const rect = b => Array.isArray(b) && b.length === 4 && b.every(num) && b[0] < b[1] && b[2] < b[3];
+  if (!r || typeof r !== 'object') return 'The rover must be a JSON object.';
+  if (!Array.isArray(r.body) || !r.body.length || !r.body.every(rect)) return 'body must be a list of boxes [x0, x1, y0, y1] with x0 < x1 and y0 < y1.';
+  if (!Array.isArray(r.wheels) || !r.wheels.length) return 'wheels must be a list of wheels.';
+  const motorPorts = new Set();
+  for (const [i, w] of r.wheels.entries()) {
+    const name = 'Wheel ' + (i + 1);
+    if (!w || !num(w.x) || !num(w.y) || !num(w.d) || w.d <= 0) return name + ' needs x, y and a diameter d above 0.';
+    if (w.port === undefined || w.port === null) continue;
+    if (w.caster) return name + ' is a caster, so it cannot be driven by a motor.';
+    if (!PORTS.includes(w.port)) return name + ': port must be "A" to "F".';
+    if (w.forward !== 1 && w.forward !== -1) return name + ': forward must be 1 or -1.';
+    if (w.gear !== undefined && (!num(w.gear) || w.gear <= 0)) return name + ': gear must be a number above 0.';
+    if (Math.abs(w.x) < SIDE_GAP) return name + ' is driven but sits on the middle line, so it is on neither side.';
+    motorPorts.add(w.port);
+  }
+  const driven = r.wheels.filter(w => w.port);
+  for (const p of motorPorts) {
+    const sides = new Set(driven.filter(w => w.port === p).map(w => Math.sign(w.x)));
+    if (sides.size > 1) return 'Port ' + p + ' drives wheels on both sides, so the rover could not turn.';
+  }
+  if (!driven.some(w => w.x < 0) || !driven.some(w => w.x > 0))
+    return 'The rover needs a driven wheel on each side to turn on the spot, and the autonomy programs need that.';
+  if (!Array.isArray(r.sensors)) return 'sensors must be a list (it can be empty: []).';
+  const sensorPorts = new Set();
+  for (const [i, s] of r.sensors.entries()) {
+    const name = 'Sensor ' + (i + 1);
+    if (!s || (s.type !== 'distance' && s.type !== 'colour')) return name + ': type must be "distance" or "colour".';
+    if (!PORTS.includes(s.port)) return name + ': port must be "A" to "F".';
+    if (!num(s.x) || !num(s.y)) return name + ' needs x and y.';
+    if (s.angle !== undefined && !num(s.angle)) return name + ': angle must be a number.';
+    if (motorPorts.has(s.port) || sensorPorts.has(s.port)) return 'Port ' + s.port + ' is used twice.';
+    sensorPorts.add(s.port);
+  }
+  const m = r.measured || {};
+  for (const k of ['turnPointBehindFront', 'quarterTurnWheelDegrees'])
+    if (m[k] !== undefined && m[k] !== null && !(num(m[k]) && m[k] > 0)) return 'measured.' + k + ' must be a number above 0, or null.';
+  return '';
+}
+
+// Solve the 3x3 system M t = b (Gaussian elimination). null if singular.
+function solve3(M, b) {
+  const A = M.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < 3; c++) {
+    let p = c;
+    for (let r = c + 1; r < 3; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    if (Math.abs(A[p][c]) < 1e-12) return null;
+    [A[c], A[p]] = [A[p], A[c]];
+    for (let r = 0; r < 3; r++) {
+      if (r === c) continue;
+      const f = A[r][c] / A[c][c];
+      for (let k = c; k < 4; k++) A[r][k] -= f * A[c][k];
+    }
+  }
+  return [A[0][3] / A[0][0], A[1][3] / A[1][1], A[2][3] / A[2][2]];
+}
+
+// How a rover with wheels that cannot swivel spins on the spot. Each such
+// wheel presses on the floor with the same weight and friction (an
+// assumption). Driven wheels are made to roll at a set speed; free wheels
+// roll freely but resist sliding sideways. Slow LEGO rovers hardly use any
+// force to speed up, so the friction forces must balance - and the motion
+// where they balance is the one that wastes the least energy in sliding.
+// Found by iteratively reweighted least squares.
+// contacts: {x, y, s (rolling speed, driven only), free}. Returns [vx, vy, w].
+function slidingMotion(contacts) {
+  let t = [0, 0, 0];
+  for (let it = 0; it < 500; it++) {
+    const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], b = [0, 0, 0];
+    const add = (row, target, wgt) => {
+      for (let i = 0; i < 3; i++) { b[i] += wgt * row[i] * target; for (let j = 0; j < 3; j++) M[i][j] += wgt * row[i] * row[j]; }
+    };
+    for (const c of contacts) {
+      // Sliding of the wheel over the floor: sideways ex, along the wheel ey.
+      const ex = t[0] - t[2] * c.y, ey = c.free ? 0 : t[1] + t[2] * c.x - c.s;
+      const wgt = it === 0 ? 1 : 1 / Math.sqrt(ex * ex + ey * ey + 1e-12);
+      add([1, 0, -c.y], 0, wgt);
+      if (!c.free) add([0, 1, c.x], c.s, wgt);
+    }
+    const next = solve3(M, b);
+    if (!next) return null;
+    const step = Math.abs(next[0] - t[0]) + Math.abs(next[1] - t[1]) + Math.abs(next[2] - t[2]);
+    t = next;
+    if (it > 5 && step < 1e-10) break;
+  }
+  return t;
+}
+
+// From the description: the turning point, the effective track (how far
+// apart wheels would have to be, without any sliding, to turn at the same
+// rate), and everything moved so the turning point is the origin.
+function deriveRover(r) {
+  const fixed = r.wheels.filter(w => !w.caster);
+  const driven = r.wheels.filter(w => w.port);
+  const mm = r.measured || {};
+  // Rolling speed (cm/s) per motor degree per second, + = forward.
+  const rate = w => w.forward / (w.gear || 1) * Math.PI * w.d / 360;
+  const meanAbsRate = list => list.reduce((a, w) => a + Math.abs(rate(w)), 0) / list.length;
+  const left = driven.filter(w => w.x < 0), right = driven.filter(w => w.x > 0);
+  const kL = meanAbsRate(left), kR = meanAbsRate(right);
+  const xs = list => list.reduce((a, w) => a + w.x, 0) / list.length;
+  const geomTrack = xs(right) - xs(left);
+
+  let px, py, track, skid = false;
+  const y0 = fixed[0].y;
+  if (fixed.every(w => Math.abs(w.y - y0) < 0.05)) {
+    // All the wheels that cannot swivel are on one axle: no sliding needed.
+    px = (xs(left) + xs(right)) / 2; py = y0; track = geomTrack;
+  } else {
+    skid = true;
+    const contacts = fixed.map(w => w.port
+      ? { x: w.x, y: w.y, s: (w.x < 0 ? -1 : 1) * Math.abs(rate(w)) / (w.x < 0 ? kL : kR), free: false }
+      : { x: w.x, y: w.y, s: 0, free: true });
+    const t = slidingMotion(contacts);
+    if (t && Math.abs(t[2]) > 1e-9) { px = -t[1] / t[2]; py = t[0] / t[2]; track = 2 / t[2]; }
+    else { px = (xs(left) + xs(right)) / 2; py = fixed.reduce((a, w) => a + w.y, 0) / fixed.length; track = geomTrack; }
+  }
+  const bx0 = Math.min(...r.body.map(b => b[0])), bx1 = Math.max(...r.body.map(b => b[1]));
+  const by0 = Math.min(...r.body.map(b => b[2])), by1 = Math.max(...r.body.map(b => b[3]));
+  let pointHow = 'estimate', trackHow = 'estimate';
+  if (mm.turnPointBehindFront) { px = (bx0 + bx1) / 2; py = by1 - mm.turnPointBehindFront; pointHow = 'measured'; }
+  // In a quarter turn each side rolls a quarter of a circle of diameter
+  // track: track x pi / 4 cm.
+  const motorDegPerCm = 1 / ((kL + kR) / 2);
+  if (mm.quarterTurnWheelDegrees) { track = mm.quarterTurnWheelDegrees / (Math.PI / 4 * motorDegPerCm); trackHow = 'measured'; }
+
+  const sh = b => [b[0] - px, b[1] - px, b[2] - py, b[3] - py];
+  const body = r.body.map(sh);
+  let reach = 0;
+  for (const [a, b, c, d] of body) for (const [x, y] of [[a, c], [a, d], [b, c], [b, d]]) reach = Math.max(reach, Math.hypot(x, y));
+  return {
+    name: r.name || 'My rover', body, reach, skid, pointHow, trackHow, geomTrack, track,
+    front: by1 - py, back: py - by0, width: bx1 - bx0, behindFront: by1 - py,
+    quarterTurnDeg: track * Math.PI / 4 * motorDegPerCm,
+    left: left.map(w => ({ port: w.port, k: rate(w) })), right: right.map(w => ({ port: w.port, k: rate(w) })),
+    drivePorts: new Set(driven.map(w => w.port)),
+    wheels: r.wheels.map(w => ({ x: w.x - px, y: w.y - py, d: w.d, port: w.port || null, caster: !!w.caster })),
+    sensors: r.sensors.map(s => ({ type: s.type, port: s.port, x: s.x - px, y: s.y - py, angle: s.angle || 0 })),
+  };
+}
 
 /* ===================== Course presets (cm, y up) ===================== */
 const PRESETS = {
@@ -659,43 +875,52 @@ async function sleep(ms) {
   if (me.cancelled) throw new Cancelled('cancelled');
 }
 
-// The rover is a rectangle: bodyFront ahead of the wheel centres, bodyBack
-// behind them, bodyWidth across. (x, y) is the middle of the wheels, h the
+// A point on the rover (x to its right, y forward of the turning point),
+// on the floor, for a rover at (px, py) facing h.
+function onFloor(px, py, h, x, y) {
+  const r = rad(h);
+  return [px + Math.cos(r) * x - Math.sin(r) * y, py + Math.sin(r) * x + Math.cos(r) * y];
+}
+// The rover's body is one or more boxes. (x, y) is the turning point, h the
 // heading. Walls are axis-aligned boxes; separating-axis test on 4 axes.
 function collides(x, y, h) {
   const r = rad(h), fx = -Math.sin(r), fy = Math.cos(r), qx = Math.cos(r), qy = Math.sin(r);
-  const L = (P.bodyFront + P.bodyBack) / 2, Hw = P.bodyWidth / 2, off = (P.bodyFront - P.bodyBack) / 2;
-  const cx = x + fx * off, cy = y + fy * off;
-  const ex = Math.abs(fx) * L + Math.abs(qx) * Hw, ey = Math.abs(fy) * L + Math.abs(qy) * Hw;
-  for (const [a, b, c, d] of course.walls) {
-    if (cx + ex <= a || cx - ex >= b || cy + ey <= c || cy - ey >= d) continue;
-    const mx = (a + b) / 2, my = (c + d) / 2, hx = (b - a) / 2, hy = (d - c) / 2;
-    if (Math.abs((mx - cx) * fx + (my - cy) * fy) >= L + Math.abs(fx) * hx + Math.abs(fy) * hy) continue;
-    if (Math.abs((mx - cx) * qx + (my - cy) * qy) >= Hw + Math.abs(qx) * hx + Math.abs(qy) * hy) continue;
-    return true;
+  for (const [b0, b1, b2, b3] of R.body) {
+    const L = (b3 - b2) / 2, Hw = (b1 - b0) / 2, offF = (b3 + b2) / 2, offQ = (b1 + b0) / 2;
+    const cx = x + fx * offF + qx * offQ, cy = y + fy * offF + qy * offQ;
+    const ex = Math.abs(fx) * L + Math.abs(qx) * Hw, ey = Math.abs(fy) * L + Math.abs(qy) * Hw;
+    for (const [a, b, c, d] of course.walls) {
+      if (cx + ex <= a || cx - ex >= b || cy + ey <= c || cy - ey >= d) continue;
+      const mx = (a + b) / 2, my = (c + d) / 2, hx = (b - a) / 2, hy = (d - c) / 2;
+      if (Math.abs((mx - cx) * fx + (my - cy) * fy) >= L + Math.abs(fx) * hx + Math.abs(fy) * hy) continue;
+      if (Math.abs((mx - cx) * qx + (my - cy) * qy) >= Hw + Math.abs(qx) * hx + Math.abs(qy) * hy) continue;
+      return true;
+    }
   }
   return false;
 }
-// Forward speed of each drive wheel, in wheel degrees per second.
+// Forward speed (cm/s) and turn rate (deg/s, + = left) from the motor speeds.
+// Each side rolls at the average speed of its driven wheels; the turn rate
+// uses the effective track, which includes any sliding (see deriveRover).
 function motion(me) {
-  const fR = (me.vel[P.rightMotorPort] || 0) * P.rightMotorForward;
-  const fL = (me.vel[P.leftMotorPort] || 0) * P.leftMotorForward;
-  return [(fR + fL) / 2 / 360 * Math.PI * P.wheelDiameter, (fR - fL) / 2 * (P.wheelDiameter / P.trackWidth)];
+  const side = ws => ws.reduce((a, w) => a + (me.vel[w.port] || 0) * w.k, 0) / ws.length;
+  const vL = side(R.left), vR = side(R.right);
+  return [(vR + vL) / 2, (vR - vL) / R.track * 180 / Math.PI];
 }
 function addPath(me) {
   const last = me.path[me.path.length - 1];
   if (Math.hypot(me.x - last[0], me.y - last[1]) > 0.8) me.path.push([me.x, me.y]);
 }
 function physics(me, dt) {
-  const L = P.leftMotorPort, R = P.rightMotorPort;
-  for (const p of 'ABCDEF') if (p !== L && p !== R) me.pos[p] += me.vel[p] * dt;   // other motors turn freely
+  for (const p of PORTS) if (!R.drivePorts.has(p)) me.pos[p] += me.vel[p] * dt;   // other motors turn freely
   const [v, w] = motion(me);
   if (v === 0 && w === 0) return;
   // Turning on the spot can hit things too: the back of the rover swings round.
   const nh = wrap(me.h + w * dt), r = rad(nh);
   const nx = me.x - Math.sin(r) * v * dt, ny = me.y + Math.cos(r) * v * dt;
-  if (collides(nx, ny, nh)) return;
-  me.x = nx; me.y = ny; me.h = nh; me.pos[L] += me.vel[L] * dt; me.pos[R] += me.vel[R] * dt;
+  if (collides(nx, ny, nh)) return;      // blocked: the drive motors stall
+  me.x = nx; me.y = ny; me.h = nh;
+  for (const p of R.drivePorts) me.pos[p] += me.vel[p] * dt;
   addPath(me);
 }
 function castRay(px, py, ang) {
@@ -712,8 +937,9 @@ function castRay(px, py, ang) {
 const hub = {
   run(p, v) { S.vel[p] = v; },
   stop(p) {
-    const L = P.leftMotorPort, R = P.rightMotorPort;
-    if ((p === L || p === R) && S.vel[L] !== 0 && S.vel[R] !== 0) {
+    // The first drive motor to stop, while they all still run, brings the
+    // rover's coasting.
+    if (R.drivePorts.has(p) && [...R.drivePorts].every(q => S.vel[q] !== 0)) {
       const [v, w] = motion(S);
       const nh = wrap(S.h + w * P.turnMomentum);
       if (!collides(S.x, S.y, nh)) S.h = nh;
@@ -729,19 +955,21 @@ const hub = {
   resetRelPos(p, v) { S.pos[p] = v; },
   tiltYaw() { return Math.round(wrap(S.h - S.yawOff) * 10); },
   resetYaw(v) { S.yawOff = S.h - (v || 0); },
-  distance() {
-    const r = rad(S.h);
-    const sx = S.x - Math.sin(r) * P.sonarOffset, sy = S.y + Math.cos(r) * P.sonarOffset;
+  distance(port) {
+    const sensor = R.sensors.find(s => s.type === 'distance' && s.port === port);
+    if (!sensor) return null;
+    const [sx, sy] = onFloor(S.x, S.y, S.h, sensor.x, sensor.y);
+    const h = wrap(S.h + sensor.angle), r = rad(h);
     const n = Math.max(1, Math.ceil(P.coneHalf / 3));
     let best = null;
     for (let k = -n; k <= n; k++) {
-      const hit = castRay(sx, sy, S.h + k * P.coneHalf / n);
+      const hit = castRay(sx, sy, h + k * P.coneHalf / n);
       if (hit && hit[1] <= P.maxIncidence && (best === null || hit[0] < best)) best = hit[0];
     }
     if (best !== null && P.dropoutPct > 0 && Math.random() * 100 < P.dropoutPct) best = null;
     if (best !== null && P.noiseCm > 0) best = Math.max(0.5, best + (Math.random() * 2 - 1) * P.noiseCm);
     if (best !== null && best > P.sonarRange) best = null;
-    S.beam = { sx, sy, h: S.h, d: best, t: S.t };
+    S.beam = { sx, sy, h, d: best, t: S.t };
     if (best !== null) {
       S.echoes.push([sx - Math.sin(r) * best, sy + Math.cos(r) * best, S.t]);
       if (S.echoes.length > 2500) S.echoes.splice(0, 500);
@@ -749,9 +977,10 @@ const hub = {
     }
     return -1;
   },
-  color() {
-    const r = rad(S.h);
-    const x = S.x - Math.sin(r) * P.colorOffset, y = S.y + Math.cos(r) * P.colorOffset;
+  color(port) {
+    const sensor = R.sensors.find(s => s.type === 'colour' && s.port === port);
+    if (!sensor) return null;
+    const [x, y] = onFloor(S.x, S.y, S.h, sensor.x, sensor.y);
     const inside = q => q && x >= q[0] && x <= q[1] && y >= q[2] && y <= q[3];
     if (inside(course.red)) return COLOR_RED;
     if (inside(course.green)) return COLOR_GREEN;
@@ -816,12 +1045,13 @@ window.simBridge = {
   resetRelPos: (p, v) => hub.resetRelPos(p, Number(v)),
   motorVel: p => (S && S.vel[p]) || 0,
   setDrivePorts: (l, r) => {
-    if (P.leftMotorPort === l && P.rightMotorPort === r) return;
-    P.leftMotorPort = l; P.rightMotorPort = r;
-    log('(simulator) drive motors set to port ' + l + ' (left) and port ' + r + ' (right), from motor_pair.pair', 'info');
+    if (R.left.some(w => w.port === l) && R.right.some(w => w.port === r)) return;
+    log('WARNING: (simulator) motor_pair.pair uses port ' + l + ' as left and port ' + r + ' as right, but the rover in the Rover tab ' +
+        'drives its left wheels from port ' + [...new Set(R.left.map(w => w.port))].join('/') +
+        ' and its right wheels from port ' + [...new Set(R.right.map(w => w.port))].join('/'), 'error');
   },
-  distance: () => hub.distance(),
-  color: () => hub.color(),
+  distance: p => hub.distance(String(p)),
+  color: p => hub.color(String(p)),
   tiltYaw: () => hub.tiltYaw(),
   resetYaw: v => hub.resetYaw(Number(v) || 0),
   sleep: ms => sleep(Number(ms)),
@@ -838,7 +1068,7 @@ async function initPython() {
     setStatusChip('Ready', '');
     $('btnRun').disabled = false; $('btnStep').disabled = false;
     await reloadSource(true).catch(() => {});
-    if (location.hash === '#autorun') {      // open as rover_sim.html#autorun to start a Max-speed run straight away
+    if (location.hash.startsWith('#autorun')) {   // rover_sim.html#autorun starts a Max-speed run straight away
       ctl.speed = Infinity; $('speed').value = 'max';
       startRun(false);
     }
@@ -1050,7 +1280,6 @@ function buildPhys() {
 function readPhys() {
   document.querySelectorAll('#physParams input, #physParams select').forEach(i => {
     const key = i.dataset.key;
-    if (key.endsWith('Port')) { P[key] = i.value || i.dataset.def; return; }
     const v = Number(i.value); P[key] = i.value !== '' && Number.isFinite(v) ? v : Number(i.dataset.def);
   });
 }
@@ -1098,6 +1327,69 @@ $('btnCopyJson').addEventListener('click', () => {
   const fallback = () => { ta.focus(); ta.select(); setMsg('Selected the JSON. Press Ctrl+C to copy it.', 'ok'); };
   try { navigator.clipboard.writeText(ta.value).then(() => setMsg('Copied the course JSON.', 'ok'), fallback); } catch (e) { fallback(); }
 });
+
+/* ===================== Rover panel ===================== */
+function formatRover(r) {
+  const one = o => JSON.stringify(o).replace(/,"/g, ', "').replace(/":/g, '": ').replace(/,(?=[-\d])/g, ', ');
+  const list = (key, items) => '  "' + key + '": ' + (items.length ? '[\n' + items.map(i => '    ' + one(i)).join(',\n') + '\n  ]' : '[]');
+  return '{\n  "name": ' + JSON.stringify(r.name || 'My rover') + ',\n' + list('body', r.body) + ',\n' + list('wheels', r.wheels) +
+    ',\n' + list('sensors', r.sensors) + ',\n  "measured": ' + one(r.measured || {}) + '\n}';
+}
+function setRoverMsg(text, kind) { const m = $('roverMsg'); m.textContent = text; m.className = 'msg ' + kind; }
+function renderRoverSummary() {
+  const host = $('roverSummary'); host.innerHTML = '';
+  const line = (text, cls) => { const d = document.createElement('div'); d.textContent = text; if (cls) d.className = cls; host.appendChild(d); return d; };
+  const b = document.createElement('b'); b.textContent = R.name; host.appendChild(b);
+  const how = h => h === 'measured' ? ' (measured)' : ' (estimate)';
+  line('Turns about a point ' + n1(R.behindFront) + ' cm behind the front' + how(R.pointHow) +
+       '. Turning on the spot needs a clear circle ' + n1(2 * R.reach) + ' cm across.');
+  line('A quarter turn takes about ' + Math.round(R.quarterTurnDeg) + ' motor degrees' + how(R.trackHow) +
+       (R.skid && R.trackHow !== 'measured' ? ': its wheels slide, so it turns like wheels ' + n1(R.track) + ' cm apart, not ' + n1(R.geomTrack) + ' cm.' : '.'));
+  const ports = list => [...new Set(list.map(w => w.port))].join(' + ');
+  const sensors = R.sensors.map(s => s.type + ' port ' + s.port).join(', ');
+  line('Left wheels: port ' + ports(R.left) + '. Right wheels: port ' + ports(R.right) + '. ' + (sensors ? 'Sensors: ' + sensors + '.' : 'No sensors.'));
+  const dist = R.sensors.find(s => s.type === 'distance'), col = R.sensors.find(s => s.type === 'colour');
+  line('Settings for your program, measured from the turning point: ROVER_WIDTH_CM = ' + n1(R.width) + ', ROVER_FRONT_CM = ' + n1(R.front) +
+       ', ROVER_BACK_CM = ' + n1(R.back) + (dist ? ', DISTANCE_SENSOR_POSITION_CM = ' + n1(dist.y) : '') + (col ? ', COLOUR_SENSOR_POSITION_CM = ' + n1(col.y) : ''));
+  if (R.skid && (R.pointHow !== 'measured' || R.trackHow !== 'measured'))
+    line('Its wheels slide sideways when it turns. The estimate assumes the same weight on every wheel; fill in "Match my real rover" to make the simulator turn like your rover.', 'warn');
+}
+function roverChanged() {
+  R = deriveRover(rover);
+  store('rover', rover);
+  $('roverJson').value = formatRover(rover);
+  const m = rover.measured || {};
+  $('mTurnPoint').value = m.turnPointBehindFront || '';
+  $('mQuarter').value = m.quarterTurnWheelDegrees || '';
+  renderRoverSummary();
+  if (S && !isActive()) { S = null; clearLog(); syncControls(); }
+}
+function setRover(r) {
+  const err = validRover(r);
+  if (err) { setRoverMsg(err, 'bad'); return false; }
+  if (isActive()) resetRun();
+  rover = r; roverChanged();
+  return true;
+}
+$('btnRoverPreset').addEventListener('click', () => { if (setRover(clone(ROVER_PRESETS[$('roverPreset').value]))) setRoverMsg('Loaded the preset.', 'ok'); });
+$('btnApplyRover').addEventListener('click', () => {
+  let r;
+  try { r = JSON.parse($('roverJson').value); } catch (e) { setRoverMsg('That is not valid JSON: ' + e.message, 'bad'); return; }
+  if (r && typeof r === 'object' && !r.sensors) r.sensors = [];
+  if (setRover(r)) setRoverMsg('Applied the rover.', 'ok');
+});
+$('btnCopyRover').addEventListener('click', () => {
+  const ta = $('roverJson');
+  const fallback = () => { ta.focus(); ta.select(); setRoverMsg('Selected the JSON. Press Ctrl+C to copy it.', 'ok'); };
+  try { navigator.clipboard.writeText(ta.value).then(() => setRoverMsg('Copied the rover JSON.', 'ok'), fallback); } catch (e) { fallback(); }
+});
+for (const [id, key] of [['mTurnPoint', 'turnPointBehindFront'], ['mQuarter', 'quarterTurnWheelDegrees']]) {
+  $(id).addEventListener('change', () => {
+    const v = Number($(id).value), r = clone(rover);
+    r.measured = Object.assign({}, r.measured, { [key]: $(id).value !== '' && v > 0 ? v : null });
+    if (setRover(r)) setRoverMsg($(id).value === '' ? 'Using the estimate.' : 'Using your measurement.', 'ok');
+  });
+}
 
 /* ===================== Canvas ===================== */
 const cv = $('cv'), ctx = cv.getContext('2d');
@@ -1200,7 +1492,7 @@ function drawCourse() {
   drawPatch(course.red, colors.red, 'RED');
   ctx.fillStyle = colors.wall; ctx.strokeStyle = colors['wall-edge']; ctx.lineWidth = 1.5;
   for (const w of course.walls) { ctx.beginPath(); rectPath(w); ctx.fill(); ctx.stroke(); }
-  const [x, y] = course.start, s = Math.max(6, (P.bodyWidth || 15) / 2 * view.k);
+  const [x, y] = course.start, s = Math.max(6, R.width / 2 * view.k);
   ctx.strokeStyle = colors.muted; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.arc(sx(x), sy(y), s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
   ctx.beginPath(); ctx.moveTo(sx(x), sy(y) - s - 6); ctx.lineTo(sx(x) - 5, sy(y) - s + 2); ctx.lineTo(sx(x) + 5, sy(y) - s + 2); ctx.closePath();
@@ -1238,21 +1530,34 @@ function drawMap() {
   }
 }
 function drawRover(x, y, h, ghost) {
-  // Drawn around the middle of the wheels, front pointing up before rotation.
-  const k = view.k, Fr = (P.bodyFront || 7) * k, Bk = (P.bodyBack || 11) * k, Hw = (P.bodyWidth || 15) / 2 * k;
+  // Drawn around the turning point, front pointing up before rotation.
+  // Canvas y points down, so a point (rx, ry) on the rover is at (rx, -ry).
+  const k = view.k, Fr = R.front * k;
   ctx.save(); ctx.translate(sx(x), sy(y)); ctx.rotate(-rad(h));
   ctx.beginPath();
-  if (ctx.roundRect) ctx.roundRect(-Hw, -Fr, 2 * Hw, Fr + Bk, Math.min(4, Hw * 0.35)); else ctx.rect(-Hw, -Fr, 2 * Hw, Fr + Bk);
+  for (const [a, b, c, d] of R.body) ctx.rect(a * k, -d * k, (b - a) * k, (d - c) * k);
   if (ghost) { ctx.setLineDash([4, 3]); ctx.strokeStyle = colors['k-decision']; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
   else { ctx.fillStyle = colors.raised; ctx.fill(); ctx.strokeStyle = colors.ink; ctx.lineWidth = 2; ctx.stroke(); }
   ctx.beginPath(); ctx.moveTo(0, -Fr - 5); ctx.lineTo(-5, -Fr + 3); ctx.lineTo(5, -Fr + 3); ctx.closePath();
   ctx.fillStyle = ghost ? colors['k-decision'] : colors.ink; ctx.fill();
   if (!ghost) {
-    ctx.fillStyle = colors.ink;
-    const tw = (P.trackWidth || 11.2) / 2 * view.k, wl = (P.wheelDiameter || 5.6) / 2 * view.k;
-    ctx.fillRect(-tw - 2, -wl, 3, 2 * wl); ctx.fillRect(tw - 1, -wl, 3, 2 * wl);
-    ctx.fillStyle = colors.sonar; ctx.beginPath(); ctx.arc(0, -(P.sonarOffset || 0) * view.k, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.strokeStyle = colors.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, -(P.colorOffset || 0) * view.k, 3.5, 0, Math.PI * 2); ctx.stroke();
+    for (const w of R.wheels) {
+      ctx.fillStyle = w.port ? colors.ink : colors.muted;
+      if (w.caster) { ctx.beginPath(); ctx.arc(w.x * k, -w.y * k, Math.max(2, w.d / 2 * k), 0, Math.PI * 2); ctx.fill(); }
+      else ctx.fillRect(w.x * k - 1.5, (-w.y - w.d / 2) * k, 3, w.d * k);
+    }
+    for (const s of R.sensors) {
+      if (s.type === 'distance') {
+        ctx.fillStyle = colors.sonar; ctx.beginPath(); ctx.arc(s.x * k, -s.y * k, 3, 0, Math.PI * 2); ctx.fill();
+        if (s.angle) {
+          const a = rad(s.angle);
+          ctx.strokeStyle = colors.sonar; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s.x * k, -s.y * k);
+          ctx.lineTo(s.x * k - Math.sin(a) * 8, -s.y * k - Math.cos(a) * 8); ctx.stroke();
+        }
+      } else { ctx.strokeStyle = colors.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(s.x * k, -s.y * k, 3.5, 0, Math.PI * 2); ctx.stroke(); }
+    }
+    ctx.strokeStyle = colors.ink; ctx.lineWidth = 1; ctx.beginPath();     // the turning point
+    ctx.moveTo(-4, 0); ctx.lineTo(4, 0); ctx.moveTo(0, -4); ctx.lineTo(0, 4); ctx.stroke();
   }
   ctx.restore();
 }
@@ -1389,6 +1694,13 @@ document.addEventListener('keydown', e => {
 /* ===================== Boot ===================== */
 const savedCourse = load('course');
 if (savedCourse && !validCourse(savedCourse)) course = savedCourse;
+const savedRover = load('rover');
+rover = savedRover && !validRover(savedRover) ? savedRover : clone(ROVER_PRESETS.example);
+// For headless tests: #autorun&rover=skid4&course=arena picks presets.
+const hashArgs = new URLSearchParams(location.hash.slice(1).replace(/^autorun&?/, ''));
+if (ROVER_PRESETS[hashArgs.get('rover')]) rover = clone(ROVER_PRESETS[hashArgs.get('rover')]);
+if (PRESETS[hashArgs.get('course')]) course = clone(PRESETS[hashArgs.get('course')]);
+roverChanged();
 const savedSpeed = load('speed');
 if (savedSpeed) { $('speed').value = savedSpeed; ctl.speed = savedSpeed === 'max' ? Infinity : Number(savedSpeed); }
 const savedPath = load('srcPath');
