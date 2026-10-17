@@ -81,6 +81,7 @@ HEAD_TOWARDS = None        # which way to search first when explore() gets no ne
                            # (the names NORTH, WEST... work too). 30 = mostly north, a bit west.
                            # None = no preference. Avoid exact diagonals like NORTH_WEST: north and
                            # west then tie, and the rover just keeps going the way it faces.
+#@tuning
 HEAD_STRENGTH = 1          # how strongly to follow a hint: how many extra steps the rover will drive
                            # to reach a square one step further that way, or one step nearer the spot
 NO_ECHO_SQUARES = 2        # when a look gets no echo, count this many squares ahead as open
@@ -350,9 +351,6 @@ async def explore(find=None, near=None, towards=None):
         print("explore: towards should be a heading in degrees, like towards=30 or towards=NORTH")
         end_run()
     print("=== EXPLORER START ===")
-    if find is not None and not colour_module_installed:
-        print("explore: find needs the Colour sensor module, which is not installed")
-        return False
 
     if near is None and towards is None:
         towards = HEAD_TOWARDS

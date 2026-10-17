@@ -37,7 +37,6 @@ class ColourReached(Exception):
     moment the colour sensor arrives on the colour it is looking for."""
 
 
-colour_module_installed = True
 found_colours = []         # colours found so far, in the order they were found
 colour_spots = {}          # where each colour was first seen: colour -> (cm east, cm north)
 looking_for = None         # set by explore(find=...): the one colour that counts right now

@@ -110,6 +110,20 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
 .rsum { display: grid; gap: 3px; font-size: 12.5px; background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
 .rsum b { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.03em; }
 .rsum .warn { color: var(--warn); }
+.rsum .bad { color: var(--bad); }
+.rsum .good { color: var(--ok); }
+.rtools { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.rtools button { flex: 1; border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 5px 6px; font-family: var(--font-display); font-size: 14px; letter-spacing: 0.03em; }
+.rtools button:last-child { border-right: 0; }
+.rtools button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.rstage { height: 300px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--floor); }
+.rprops { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+.rprops:empty { display: none; }
+.rprops .field input, .rprops .field select { width: 100%; font-family: var(--font-mono); font-size: 13px; }
+.rprops .full { grid-column: 1 / -1; }
+.rjson summary { cursor: pointer; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.03em; }
+.rjson[open] summary { margin-bottom: 8px; }
+.rjson { display: grid; gap: 8px; }
 .srcline { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
 </style>
 </head>
@@ -162,6 +176,7 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
           <span class="chip" id="hudLegs">steps 0</span>
           <span class="chip" id="hudSweeps">looks 0</span>
           <span class="chip" id="hudGreen">colours: none yet</span>
+          <span class="chip s-error" id="hudSettings" hidden>Settings do not match the rover - see the Rover tab</span>
         </div>
       </div>
       <p class="hint" id="hint">Drag with Wall, Green or Red to draw. Click with Start or Erase. Scroll to zoom; drag with Look to move the view. The floor is 10 m by 10 m. Keys: R run · Space pause · N step.</p>
@@ -211,7 +226,24 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
           </select>
         </label>
         <div class="btnrow"><button type="button" id="btnRoverPreset">Load preset</button></div>
+        <label class="field"><span>Name</span><input type="text" id="roverName" spellcheck="false"></label>
+        <div class="rtools" role="toolbar" aria-label="Rover editing tools">
+          <button type="button" data-rtool="select" aria-pressed="true" title="Click a part to change it; drag to move it">Select</button>
+          <button type="button" data-rtool="box" aria-pressed="false" title="Drag to add a box to the body">Box</button>
+          <button type="button" data-rtool="wheel" aria-pressed="false" title="Click to add a wheel">Wheel</button>
+          <button type="button" data-rtool="caster" aria-pressed="false" title="Click to add a caster or ball">Caster</button>
+          <button type="button" data-rtool="distance" aria-pressed="false" title="Click to add a distance sensor">Distance</button>
+          <button type="button" data-rtool="colour" aria-pressed="false" title="Click to add a colour sensor">Colour</button>
+        </div>
+        <div class="rstage"><canvas id="rcv" aria-label="The rover seen from above, front at the top"></canvas></div>
+        <p class="hint" id="rhint">Front at the top. Grid lines every cm; bold every 5 cm. Drag a selected box's corner to resize it.</p>
+        <div class="rprops" id="roverProps"></div>
+        <p class="msg" id="roverMsg"></p>
         <div class="rsum" id="roverSummary"></div>
+        <div class="pgroup"><h3>Your program and this rover</h3>
+          <div class="rsum" id="roverCheck"><span>Loads with the file.</span></div>
+          <div class="btnrow" style="margin-top:8px"><button type="button" id="btnCopySettings">Copy settings for my program</button></div>
+        </div>
         <div class="pgroup"><h3>Match my real rover</h3>
           <p class="pane-note">Optional. Leave a box empty to use the simulator's estimate.</p>
           <div class="prow"><label for="mTurnPoint">Turning point, cm behind the front</label><input type="number" step="any" id="mTurnPoint">
@@ -219,10 +251,11 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
           <div class="prow"><label for="mQuarter">Motor degrees for a quarter turn</label><input type="number" step="any" id="mQuarter">
             <div class="help">How far each drive motor turns while the rover spins 90 degrees on the spot. setup_check test 5 prints it.</div></div>
         </div>
+        <details class="rjson"><summary>Rover as JSON - to save it, or share it with your team</summary>
         <label class="field"><span>Rover as JSON (cm; x to the right, y forward)</span><textarea id="roverJson" spellcheck="false"></textarea></label>
         <div class="btnrow"><button type="button" id="btnApplyRover">Apply JSON</button><button type="button" id="btnCopyRover">Copy JSON</button></div>
-        <p class="msg" id="roverMsg"></p>
         <p class="pane-note">Measure from any point you like; the presets use the middle of the drive wheels. <code>body</code> is a list of boxes [x0, x1, y0, y1]. Each wheel has <code>x</code>, <code>y</code> and diameter <code>d</code>; a driven wheel also has the motor's <code>port</code>, <code>forward</code> (the speed sign that rolls it forward, 1 or -1) and, if it is geared, <code>gear</code> (motor turns per wheel turn). Wheels that swivel, and ball casters, have <code>"caster": true</code>. Sensors have <code>type</code> ("distance" or "colour"), <code>port</code>, <code>x</code>, <code>y</code> and, for a sensor that points sideways, <code>angle</code> (degrees, + is to the left).</p>
+        </details>
       </div>
 
       <div class="tabpane" id="tab-course" role="tabpanel" hidden>
@@ -805,7 +838,7 @@ function deriveRover(r) {
   let reach = 0;
   for (const [a, b, c, d] of body) for (const [x, y] of [[a, c], [a, d], [b, c], [b, d]]) reach = Math.max(reach, Math.hypot(x, y));
   return {
-    name: r.name || 'My rover', body, reach, skid, pointHow, trackHow, geomTrack, track,
+    name: r.name || 'My rover', pivot: [px, py], body, reach, skid, pointHow, trackHow, geomTrack, track,
     front: by1 - py, back: py - by0, width: bx1 - bx0, behindFront: by1 - py,
     quarterTurnDeg: track * Math.PI / 4 * motorDegPerCm,
     left: left.map(w => ({ port: w.port, k: rate(w) })), right: right.map(w => ({ port: w.port, k: rate(w) })),
@@ -1144,15 +1177,18 @@ $('srcPath').addEventListener('change', () => { fileHandle = null; pickedFile = 
 const CONST_RE = /^([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*(True|False|-?\d+(?:\.\d+)?)\b/;
 let overrides = load('overrides') || {};
 function parseConstants(src) {
-  // Only the SETTINGS block, when the file has one: the names above it (like
-  // NORTH) and the numbers inside the code are not meant to be changed.
-  let lines = src.split('\n');
-  const at = lines.findIndex(l => /^# SETTINGS\b/.test(l));
-  if (at >= 0) {
-    const rest = lines.slice(at + 2);
-    const end = rest.findIndex(l => /^# ={10,}/.test(l));
-    lines = end >= 0 ? rest.slice(0, end) : rest;
-  }
+  // Only the SETTINGS and FINE TUNING blocks, when the file has them: the
+  // names above them (like NORTH) and the numbers inside the code are not
+  // meant to be changed.
+  const all = src.split('\n');
+  let lines = [];
+  all.forEach((l, at) => {
+    if (!/^# (SETTINGS|FINE TUNING)\b/.test(l)) return;
+    const rest = all.slice(at + 2);
+    const end = rest.findIndex(r => /^# ={10,}/.test(r));
+    lines = lines.concat(end >= 0 ? rest.slice(0, end) : rest);
+  });
+  if (!lines.length) lines = all;
   const out = [];
   lines.forEach(line => { const m = CONST_RE.exec(line); if (m) out.push({ name: m[1], value: m[2] }); });
   return out;
@@ -1186,13 +1222,14 @@ function refreshFromSource(src) {
     inp.addEventListener('change', () => {
       if (inp.value === '' || String(inp.value) === String(c.value)) delete overrides[c.name];
       else overrides[c.name] = String(inp.value);
-      store('overrides', overrides); mark();
+      store('overrides', overrides); mark(); renderProgramCheck();
     });
     mark();
     row.append(lab, inp);
     host.appendChild(row);
   }
   applyFilter();
+  renderProgramCheck();
 }
 function applyFilter() {
   const q = $('paramFilter').value.trim().toUpperCase();
@@ -1224,6 +1261,9 @@ async function startRun(stepFirst) {
   const me = S;
   ctl.paused = false; ctl.stepMode = !!stepFirst; selected = -1;
   syncControls();
+  for (const [name, have, want, kind] of settingMismatches() || [])
+    log('WARNING: (simulator) your program has ' + name + ' = ' + settingText(have, kind) + ', but the rover in the Rover tab has ' +
+        settingText(want, kind) + '. The simulator drives the Rover tab\'s rover.', 'error');
   try {
     const started = pyFn.start(buildRunSource(src.text), src.name);
     if (!started) { me.status = 'stopped'; log('ERROR: the file never calls runloop.run(...), so nothing ran.', 'error'); syncControls(); }
@@ -1348,9 +1388,6 @@ function renderRoverSummary() {
   const ports = list => [...new Set(list.map(w => w.port))].join(' + ');
   const sensors = R.sensors.map(s => s.type + ' port ' + s.port).join(', ');
   line('Left wheels: port ' + ports(R.left) + '. Right wheels: port ' + ports(R.right) + '. ' + (sensors ? 'Sensors: ' + sensors + '.' : 'No sensors.'));
-  const dist = R.sensors.find(s => s.type === 'distance'), col = R.sensors.find(s => s.type === 'colour');
-  line('Settings for your program, measured from the turning point: ROVER_WIDTH_CM = ' + n1(R.width) + ', ROVER_FRONT_CM = ' + n1(R.front) +
-       ', ROVER_BACK_CM = ' + n1(R.back) + (dist ? ', DISTANCE_SENSOR_POSITION_CM = ' + n1(dist.y) : '') + (col ? ', COLOUR_SENSOR_POSITION_CM = ' + n1(col.y) : ''));
   if (R.skid && (R.pointHow !== 'measured' || R.trackHow !== 'measured'))
     line('Its wheels slide sideways when it turns. The estimate assumes the same weight on every wheel; fill in "Match my real rover" to make the simulator turn like your rover.', 'warn');
 }
@@ -1361,14 +1398,19 @@ function roverChanged() {
   const m = rover.measured || {};
   $('mTurnPoint').value = m.turnPointBehindFront || '';
   $('mQuarter').value = m.quarterTurnWheelDegrees || '';
+  $('roverName').value = rover.name || '';
   renderRoverSummary();
+  renderProgramCheck();
   if (S && !isActive()) { S = null; clearLog(); syncControls(); }
 }
-function setRover(r) {
+// fromEditor: the editor made this change, so its draft is already right.
+// Anything else (a preset, JSON, a measurement) replaces the editor's draft.
+function setRover(r, fromEditor) {
   const err = validRover(r);
   if (err) { setRoverMsg(err, 'bad'); return false; }
   if (isActive()) resetRun();
   rover = r; roverChanged();
+  if (!fromEditor) { draft = clone(rover); selectedPart = null; fitEditor(); renderProps(); drawEditor(); }
   return true;
 }
 $('btnRoverPreset').addEventListener('click', () => { if (setRover(clone(ROVER_PRESETS[$('roverPreset').value]))) setRoverMsg('Loaded the preset.', 'ok'); });
@@ -1389,6 +1431,348 @@ for (const [id, key] of [['mTurnPoint', 'turnPointBehindFront'], ['mQuarter', 'q
     r.measured = Object.assign({}, r.measured, { [key]: $(id).value !== '' && v > 0 ? v : null });
     if (setRover(r)) setRoverMsg($(id).value === '' ? 'Using the estimate.' : 'Using your measurement.', 'ok');
   });
+}
+
+/* ===================== Your program and this rover ===================== */
+// The settings a program needs for the rover in the Rover tab, measured
+// from its turning point. [name, value, kind, tolerance]
+function roverSettings() {
+  const driven = rover.wheels.filter(w => w.port);
+  const left = driven.filter(w => w.x < 0), right = driven.filter(w => w.x > 0);
+  const out = [];
+  out.push(['LEFT_MOTOR_PORT', left[0].port, 'port'], ['RIGHT_MOTOR_PORT', right[0].port, 'port']);
+  out.push(['LEFT_MOTOR_DIRECTION', left[0].forward, 'num', 0], ['RIGHT_MOTOR_DIRECTION', right[0].forward, 'num', 0]);
+  const ds = R.sensors.find(s => s.type === 'distance'), cs = R.sensors.find(s => s.type === 'colour');
+  if (ds) out.push(['DISTANCE_SENSOR_PORT', ds.port, 'port']);
+  if (cs) out.push(['COLOUR_SENSOR_PORT', cs.port, 'port']);
+  out.push(['WHEEL_DIAMETER_CM', round1(driven.reduce((a, w) => a + w.d, 0) / driven.length), 'num', 0.15]);
+  out.push(['WHEEL_GEAR_RATIO', round1(driven.reduce((a, w) => a + (w.gear || 1), 0) / driven.length), 'num', 0.01]);
+  out.push(['ROVER_WIDTH_CM', round1(R.width), 'num', 0.5], ['ROVER_FRONT_CM', round1(R.front), 'num', 0.5], ['ROVER_BACK_CM', round1(R.back), 'num', 0.5]);
+  if (ds) out.push(['DISTANCE_SENSOR_POSITION_CM', round1(ds.y), 'num', 0.5]);
+  if (cs) out.push(['COLOUR_SENSOR_POSITION_CM', round1(cs.y), 'num', 0.5]);
+  return out;
+}
+// Things about the rover the program cannot handle, whatever its settings say.
+function roverNotes() {
+  const notes = [];
+  const sidePorts = side => [...new Set(rover.wheels.filter(w => w.port && Math.sign(w.x) === side).map(w => w.port))];
+  if (sidePorts(-1).length > 1 || sidePorts(1).length > 1)
+    notes.push('More than one motor drives a side, but the program only drives LEFT_MOTOR_PORT and RIGHT_MOTOR_PORT. The User Manual shows how to add a second motor on each side.');
+  const rolls = new Set(rover.wheels.filter(w => w.port).map(w => round1(w.d / (w.gear || 1))));
+  if (rolls.size > 1)
+    notes.push('The driven wheels are not all the same size (after gearing), so they roll at different speeds, fight each other and slip. The program has only one WHEEL_DIAMETER_CM; the one shown is their average.');
+  const ds = R.sensors.filter(s => s.type === 'distance'), cs = R.sensors.filter(s => s.type === 'colour');
+  if (ds.length > 1 || cs.length > 1) notes.push('The program uses only one sensor of each kind: the first one listed.');
+  if (ds.length && ds[0].angle) notes.push('The distance sensor points sideways, but the autonomy programs expect it to point straight ahead.');
+  if (ds.length && Math.abs(ds[0].x) > 2) notes.push('The distance sensor is ' + n1(Math.abs(ds[0].x)) + ' cm off the middle line, so near corners it can see past (or into) things the middle of the rover meets.');
+  if (!ds.length) notes.push('There is no distance sensor, so the autonomy programs cannot see walls.');
+  if (!cs.length) notes.push('There is no colour sensor, so nothing will find colours.');
+  return notes;
+}
+function programSetting(src, name) {
+  const m = new RegExp('^' + name + '[ \\t]*=[ \\t]*(port\\.([A-F])|-?\\d+(?:\\.\\d+)?)', 'm').exec(src);
+  if (!m) return undefined;
+  return m[2] !== undefined ? m[2] : Number(m[1]);
+}
+// Settings in the program that do not match the Rover tab's rover.
+function settingMismatches() {
+  if (!lastSrc || !rover) return null;
+  const src = buildRunSource(lastSrc.text), out = [];
+  for (const [name, want, kind, tol] of roverSettings()) {
+    const have = programSetting(src, name);
+    if (have === undefined) continue;          // a team file without that setting
+    if (kind === 'port' ? have !== want : Math.abs(have - want) > tol + 1e-9) out.push([name, have, want, kind]);
+  }
+  return out;
+}
+const settingText = (v, kind) => kind === 'port' ? 'port.' + v : String(v);
+function renderProgramCheck() {
+  const host = $('roverCheck'); host.innerHTML = '';
+  const line = (text, cls) => { const d = document.createElement('div'); d.textContent = text; if (cls) d.className = cls; host.appendChild(d); };
+  const bad = settingMismatches();
+  $('hudSettings').hidden = !(bad && bad.length);
+  if (bad === null) line('Loads with the file.');
+  else if (!bad.length) line('The settings in ' + lastSrc.name + ' match this rover.', 'good');
+  else {
+    line('These settings in ' + lastSrc.name + ' do not match this rover. The simulator drives the rover drawn here, so fix whichever one is wrong:', 'bad');
+    for (const [name, have, want, kind] of bad) line(name + ' is ' + settingText(have, kind) + ' in the program, ' + settingText(want, kind) + ' here.', 'bad');
+  }
+  for (const n of roverNotes()) line(n, 'warn');
+}
+$('btnCopySettings').addEventListener('click', () => {
+  const text = ['# Settings for "' + (rover.name || 'My rover') + '", from the simulator\'s Rover tab.',
+                '# Paste them over the same lines in the SETTINGS part of your program.']
+    .concat(roverSettings().map(([name, v, kind]) => name + ' = ' + settingText(v, kind))).join('\n');
+  let out = $('settingsOut');
+  if (!out) {
+    out = document.createElement('textarea'); out.id = 'settingsOut'; out.readOnly = true; out.style.minHeight = '230px';
+    $('btnCopySettings').parentNode.after(out);
+  }
+  out.value = text;
+  const fallback = () => { out.focus(); out.select(); setRoverMsg('Selected the settings. Press Ctrl+C to copy them.', 'ok'); };
+  try { navigator.clipboard.writeText(text).then(() => setRoverMsg('Copied the settings. Paste them into your program.', 'ok'), fallback); } catch (e) { fallback(); }
+});
+
+/* ===================== Rover editor ===================== */
+// Edits a draft copy of the rover. Whenever the draft is a valid rover it
+// becomes the simulated rover; until then the message says what is missing.
+let draft = null, selectedPart = null, rtool = 'select', rdrag = null;
+const WHEEL_W = 2;                         // drawn width of a wheel, cm
+const rcv = $('rcv'), rctx = rcv.getContext('2d');
+const ev = { k: 10, cx: 0, cy: 0, w: 0, h: 0, dpr: 1 };     // px per cm, and the rover point in the middle
+const ex = x => ev.w / 2 + (x - ev.cx) * ev.k;
+const ey = y => ev.h / 2 - (y - ev.cy) * ev.k;
+const toRover = (px, py) => [ev.cx + (px - ev.w / 2) / ev.k, ev.cy - (py - ev.h / 2) / ev.k];
+const half = v => Math.round(v * 2) / 2;   // snap to 0.5 cm
+const partOf = p => p.kind === 'body' ? draft.body[p.i] : p.kind === 'wheel' ? draft.wheels[p.i] : draft.sensors[p.i];
+
+function fitEditor() {
+  if (!ev.w || !draft) return;
+  let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+  const add = (x, y) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); };
+  for (const b of draft.body) { add(b[0], b[2]); add(b[1], b[3]); }
+  for (const w of draft.wheels) { add(w.x, w.y - w.d / 2); add(w.x, w.y + w.d / 2); }
+  for (const s of draft.sensors) add(s.x, s.y);
+  ev.k = Math.min(ev.w / (Math.max(x1 - x0, 16) + 10), ev.h / (Math.max(y1 - y0, 16) + 10));
+  ev.cx = (x0 + x1) / 2; ev.cy = (y0 + y1) / 2;
+}
+function sizeEditor() {
+  const dpr = window.devicePixelRatio || 1, w = rcv.clientWidth, h = rcv.clientHeight;
+  if (!w || !h) return;
+  const first = !ev.w;
+  rcv.width = Math.round(w * dpr); rcv.height = Math.round(h * dpr);
+  Object.assign(ev, { w, h, dpr });
+  if (first) fitEditor();
+  drawEditor();
+}
+new ResizeObserver(sizeEditor).observe(rcv);
+
+function drawEditor() {
+  if (!ev.w || !draft) return;
+  const c = rctx, k = ev.k;
+  c.setTransform(ev.dpr, 0, 0, ev.dpr, 0, 0);
+  c.fillStyle = colors.floor; c.fillRect(0, 0, ev.w, ev.h);
+  const [vx0, vy1] = toRover(0, 0), [vx1, vy0] = toRover(ev.w, ev.h);
+  for (const [step, col] of [[1, colors.grid], [5, colors['grid-major']]]) {
+    if (step * k < 5) continue;
+    c.strokeStyle = col; c.lineWidth = 1; c.beginPath();
+    for (let x = Math.ceil(vx0 / step) * step; x <= vx1; x += step) { c.moveTo(ex(x), 0); c.lineTo(ex(x), ev.h); }
+    for (let y = Math.ceil(vy0 / step) * step; y <= vy1; y += step) { c.moveTo(0, ey(y)); c.lineTo(ev.w, ey(y)); }
+    c.stroke();
+  }
+  c.beginPath();
+  for (const b of draft.body) c.rect(ex(b[0]), ey(b[3]), (b[1] - b[0]) * k, (b[3] - b[2]) * k);
+  c.fillStyle = colors.raised; c.fill(); c.strokeStyle = colors.ink; c.lineWidth = 1.5; c.stroke();
+  c.font = '600 11px "IBM Plex Mono", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (const w of draft.wheels) {
+    c.fillStyle = w.port ? colors.ink : colors.muted;
+    if (w.caster) { c.beginPath(); c.arc(ex(w.x), ey(w.y), w.d / 2 * k, 0, Math.PI * 2); c.fill(); continue; }
+    c.fillRect(ex(w.x - WHEEL_W / 2), ey(w.y + w.d / 2), WHEEL_W * k, w.d * k);
+    if (w.port) { c.fillStyle = colors.raised; c.fillText(w.port, ex(w.x), ey(w.y)); }
+  }
+  for (const s of draft.sensors) {
+    const col = s.type === 'distance' ? colors.sonar : colors.accent;
+    if (s.type === 'distance') {
+      const a = rad(s.angle || 0);
+      c.strokeStyle = col; c.lineWidth = 2; c.beginPath(); c.moveTo(ex(s.x), ey(s.y));
+      c.lineTo(ex(s.x - Math.sin(a) * 4), ey(s.y + Math.cos(a) * 4)); c.stroke();
+    }
+    c.fillStyle = col; c.beginPath(); c.arc(ex(s.x), ey(s.y), 9, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#FFFFFF'; c.fillText(s.port, ex(s.x), ey(s.y) + 0.5);
+  }
+  if (selectedPart && partOf(selectedPart)) {
+    const p = partOf(selectedPart);
+    c.strokeStyle = colors.accent; c.lineWidth = 2; c.setLineDash([4, 3]); c.beginPath();
+    if (selectedPart.kind === 'body') c.rect(ex(p[0]), ey(p[3]), (p[1] - p[0]) * k, (p[3] - p[2]) * k);
+    else if (selectedPart.kind === 'wheel' && !p.caster) c.rect(ex(p.x - WHEEL_W / 2) - 3, ey(p.y + p.d / 2) - 3, WHEEL_W * k + 6, p.d * k + 6);
+    else c.arc(ex(p.x), ey(p.y), (selectedPart.kind === 'wheel' ? p.d / 2 * k : 9) + 4, 0, Math.PI * 2);
+    c.stroke(); c.setLineDash([]);
+    if (selectedPart.kind === 'body') {
+      c.fillStyle = colors.accent;
+      for (const [x, y] of [[p[0], p[2]], [p[0], p[3]], [p[1], p[2]], [p[1], p[3]]]) c.fillRect(ex(x) - 4, ey(y) - 4, 8, 8);
+    }
+  }
+  if (rdrag && rdrag.mode === 'box') {
+    const [x0, x1, y0, y1] = boxOf(rdrag);
+    c.strokeStyle = colors.ink; c.lineWidth = 1.5; c.setLineDash([5, 4]); c.strokeRect(ex(x0), ey(y1), (x1 - x0) * k, (y1 - y0) * k); c.setLineDash([]);
+  }
+  // The turning point, when the draft is the rover being simulated.
+  if (!validRover(draft)) {
+    const [px, py] = R.pivot;
+    c.strokeStyle = colors.red; c.lineWidth = 2; c.beginPath();
+    c.moveTo(ex(px) - 7, ey(py)); c.lineTo(ex(px) + 7, ey(py)); c.moveTo(ex(px), ey(py) - 7); c.lineTo(ex(px), ey(py) + 7); c.stroke();
+    c.fillStyle = colors.red; c.textAlign = 'left'; c.fillText('turns here', ex(px) + 9, ey(py) - 9);
+  }
+  c.fillStyle = colors.muted; c.textAlign = 'center'; c.font = '700 12px "Barlow Condensed", sans-serif';
+  c.fillText('FRONT', ev.w / 2, 10); c.fillText('BACK', ev.w / 2, ev.h - 9);
+}
+function boxOf(d) { return [Math.min(d.a[0], d.b[0]), Math.max(d.a[0], d.b[0]), Math.min(d.a[1], d.b[1]), Math.max(d.a[1], d.b[1])]; }
+
+function hitPart(x, y) {
+  const tol = 6 / ev.k;
+  for (let i = draft.sensors.length - 1; i >= 0; i--) { const s = draft.sensors[i]; if (Math.hypot(x - s.x, y - s.y) < 9 / ev.k + tol / 2) return { kind: 'sensor', i }; }
+  for (let i = draft.wheels.length - 1; i >= 0; i--) {
+    const w = draft.wheels[i];
+    if (w.caster ? Math.hypot(x - w.x, y - w.y) < w.d / 2 + tol : Math.abs(x - w.x) < WHEEL_W / 2 + tol && Math.abs(y - w.y) < w.d / 2 + tol) return { kind: 'wheel', i };
+  }
+  for (let i = draft.body.length - 1; i >= 0; i--) { const b = draft.body[i]; if (x >= b[0] && x <= b[1] && y >= b[2] && y <= b[3]) return { kind: 'body', i }; }
+  return null;
+}
+function usedPorts() { return new Set([...draft.wheels.map(w => w.port), ...draft.sensors.map(s => s.port)].filter(Boolean)); }
+function freePort(prefer) {
+  const used = usedPorts();
+  return [prefer, ...PORTS].find(p => p && !used.has(p)) || prefer;
+}
+// A drive wheel on a side shares that side's motor if it has one already.
+function sidePort(x) {
+  const w = draft.wheels.find(o => o.port && Math.sign(o.x) === Math.sign(x));
+  return w ? w.port : freePort(x < 0 ? 'B' : 'A');
+}
+function commitDraft() {
+  const err = validRover(draft);
+  if (err) setRoverMsg('Not used yet: ' + err, 'bad');
+  else { setRover(clone(draft), true); setRoverMsg('', ''); }
+  drawEditor();
+}
+function selectPart(p) { selectedPart = p; renderProps(); drawEditor(); }
+function setRtool(t) {
+  rtool = t;
+  document.querySelectorAll('.rtools button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.rtool === t)));
+  rcv.style.cursor = t === 'select' ? 'default' : 'crosshair';
+}
+document.querySelectorAll('.rtools button').forEach(b => b.addEventListener('click', () => setRtool(b.dataset.rtool)));
+$('roverName').addEventListener('change', () => { draft.name = $('roverName').value.trim() || 'My rover'; commitDraft(); });
+function deletePart() {
+  if (!selectedPart) return;
+  const list = selectedPart.kind === 'body' ? draft.body : selectedPart.kind === 'wheel' ? draft.wheels : draft.sensors;
+  list.splice(selectedPart.i, 1);
+  selectPart(null); commitDraft();
+}
+function mirrorWheel() {
+  const w = partOf(selectedPart), m = Object.assign({}, w, { x: -w.x });
+  if (w.port) {
+    const other = draft.wheels.find(o => o.port && Math.sign(o.x) === -Math.sign(w.x));
+    m.port = other ? other.port : freePort(w.x < 0 ? 'A' : 'B');
+    m.forward = other ? other.forward : -w.forward;
+  }
+  draft.wheels.push(m);
+  selectPart({ kind: 'wheel', i: draft.wheels.length - 1 }); commitDraft();
+}
+
+rcv.addEventListener('pointerdown', e => {
+  const r = rcv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top, [x, y] = toRover(px, py);
+  try { rcv.setPointerCapture(e.pointerId); } catch (err) { /* e.g. a synthetic event */ }
+  if (rtool === 'box') { rdrag = { mode: 'box', a: [half(x), half(y)], b: [half(x), half(y)] }; return; }
+  if (rtool !== 'select') {
+    const sx = half(x), sy = half(y);
+    if (rtool === 'wheel') draft.wheels.push({ x: sx, y: sy, d: 5.6, port: sidePort(sx), forward: sx < 0 ? -1 : 1 });
+    if (rtool === 'caster') draft.wheels.push({ x: sx, y: sy, d: 2.5, caster: true });
+    if (rtool === 'distance' || rtool === 'colour')
+      draft.sensors.push({ type: rtool, port: freePort(rtool === 'distance' ? 'C' : 'D'), x: sx, y: sy });
+    selectPart(rtool === 'distance' || rtool === 'colour' ? { kind: 'sensor', i: draft.sensors.length - 1 } : { kind: 'wheel', i: draft.wheels.length - 1 });
+    setRtool('select'); commitDraft();
+    return;
+  }
+  // Select: a corner of the selected box resizes it; anything else selects and moves.
+  if (selectedPart && selectedPart.kind === 'body') {
+    const b = partOf(selectedPart);
+    for (const [cx, cy] of [[0, 2], [0, 3], [1, 2], [1, 3]])
+      if (Math.abs(ex(b[cx]) - px) < 7 && Math.abs(ey(b[cy]) - py) < 7) { rdrag = { mode: 'resize', cx, cy }; return; }
+  }
+  const hit = hitPart(x, y);
+  selectPart(hit);
+  if (hit) rdrag = { mode: 'move', start: [x, y], orig: clone(partOf(hit)), moved: false };
+});
+rcv.addEventListener('pointermove', e => {
+  const r = rcv.getBoundingClientRect(), [x, y] = toRover(e.clientX - r.left, e.clientY - r.top);
+  $('rhint').textContent = 'x ' + n1(x) + ' cm (+ is right) · y ' + n1(y) + ' cm (+ is forward)';
+  if (!rdrag) return;
+  if (rdrag.mode === 'box') rdrag.b = [half(x), half(y)];
+  else if (rdrag.mode === 'resize') {
+    const b = partOf(selectedPart);
+    b[rdrag.cx] = half(x); b[rdrag.cy] = half(y);
+  } else {
+    const dx = half(x - rdrag.start[0]), dy = half(y - rdrag.start[1]), p = partOf(selectedPart), o = rdrag.orig;
+    if (dx || dy) rdrag.moved = true;
+    if (selectedPart.kind === 'body') { p[0] = o[0] + dx; p[1] = o[1] + dx; p[2] = o[2] + dy; p[3] = o[3] + dy; }
+    else { p.x = o.x + dx; p.y = o.y + dy; }
+  }
+  drawEditor();
+});
+rcv.addEventListener('pointerup', () => {
+  if (!rdrag) return;
+  const d = rdrag; rdrag = null;
+  if (d.mode === 'box') {
+    const b = boxOf(d);
+    if (b[1] - b[0] >= 1 && b[3] - b[2] >= 1) { draft.body.push(b); selectPart({ kind: 'body', i: draft.body.length - 1 }); setRtool('select'); commitDraft(); }
+    else drawEditor();
+    return;
+  }
+  if (d.mode === 'resize') {
+    // Dragging a corner past the opposite one flips the box; put it right.
+    const b = partOf(selectedPart), [x0, x1, y0, y1] = [Math.min(b[0], b[1]), Math.max(b[0], b[1]), Math.min(b[2], b[3]), Math.max(b[2], b[3])];
+    b[0] = x0; b[1] = x1; b[2] = y0; b[3] = y1;
+  }
+  if (d.mode === 'resize' || d.moved) { renderProps(); commitDraft(); }
+});
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPart && !$('tab-rover').hidden && !e.target.closest('input, textarea, select')) {
+    deletePart(); e.preventDefault();
+  }
+});
+
+function renderProps() {
+  const host = $('roverProps'); host.innerHTML = '';
+  if (!selectedPart || !partOf(selectedPart)) return;
+  const kind = selectedPart.kind, p = partOf(selectedPart);
+  const add = (el, full) => { if (full) el.classList.add('full'); host.appendChild(el); return el; };
+  const title = document.createElement('b'); title.style.fontFamily = 'var(--font-display)'; title.style.fontSize = '15px';
+  const field = (label, value, set, options) => {
+    const f = document.createElement('label'); f.className = 'field';
+    const s = document.createElement('span'); s.textContent = label;
+    let inp;
+    if (options) {
+      inp = document.createElement('select');
+      for (const [v, t] of options) { const o = document.createElement('option'); o.value = String(v); o.textContent = t; inp.appendChild(o); }
+    } else { inp = document.createElement('input'); inp.type = 'number'; inp.step = '0.1'; }
+    inp.value = String(value);
+    inp.addEventListener('change', () => {
+      const v = options ? inp.value : Number(inp.value);
+      if (!options && (inp.value === '' || !Number.isFinite(v))) return;
+      set(v); commitDraft(); renderProps();
+    });
+    f.append(s, inp); return add(f);
+  };
+  const portOptions = PORTS.map(q => [q, 'port ' + q]);
+  if (kind === 'body') {
+    title.textContent = 'Body box ' + (selectedPart.i + 1) + ' (cm)'; add(title, true);
+    field('Left edge', p[0], v => { p[0] = v; }); field('Right edge', p[1], v => { p[1] = v; });
+    field('Back edge', p[2], v => { p[2] = v; }); field('Front edge', p[3], v => { p[3] = v; });
+  } else if (kind === 'wheel') {
+    title.textContent = 'Wheel ' + (selectedPart.i + 1) + ' (cm)'; add(title, true);
+    const type = p.caster ? 'caster' : p.port ? 'driven' : 'free';
+    field('Kind', type, v => {
+      delete p.caster; delete p.port; delete p.forward; delete p.gear;
+      if (v === 'caster') p.caster = true;
+      if (v === 'driven') { p.port = sidePort(p.x); p.forward = p.x < 0 ? -1 : 1; }
+    }, [['driven', 'driven by a motor'], ['free', 'free (rolls, cannot swivel)'], ['caster', 'caster or ball (swivels)']]);
+    field('Diameter', p.d, v => { p.d = v; });
+    field('x (+ is right)', p.x, v => { p.x = v; }); field('y (+ is forward)', p.y, v => { p.y = v; });
+    if (p.port) {
+      field('Motor port', p.port, v => { p.port = v; }, portOptions);
+      field('Forward is', p.forward, v => { p.forward = Number(v); }, [[1, '+ speed (1)'], [-1, '- speed (-1)']]);
+      field('Gear (motor turns per wheel turn)', p.gear || 1, v => { if (v === 1) delete p.gear; else p.gear = v; });
+    }
+  } else {
+    title.textContent = (p.type === 'distance' ? 'Distance' : 'Colour') + ' sensor (cm)'; add(title, true);
+    field('Port', p.port, v => { p.port = v; }, portOptions);
+    if (p.type === 'distance') field('Angle (+ is left)', p.angle || 0, v => { if (v) p.angle = v; else delete p.angle; });
+    field('x (+ is right)', p.x, v => { p.x = v; }); field('y (+ is forward)', p.y, v => { p.y = v; });
+  }
+  const row = document.createElement('div'); row.className = 'btnrow';
+  if (kind === 'wheel') { const m = document.createElement('button'); m.type = 'button'; m.textContent = 'Copy to the other side'; m.addEventListener('click', mirrorWheel); row.appendChild(m); }
+  const del = document.createElement('button'); del.type = 'button'; del.textContent = 'Delete'; del.addEventListener('click', deletePart); row.appendChild(del);
+  add(row, true);
 }
 
 /* ===================== Canvas ===================== */
@@ -1701,11 +2085,12 @@ const hashArgs = new URLSearchParams(location.hash.slice(1).replace(/^autorun&?/
 if (ROVER_PRESETS[hashArgs.get('rover')]) rover = clone(ROVER_PRESETS[hashArgs.get('rover')]);
 if (PRESETS[hashArgs.get('course')]) course = clone(PRESETS[hashArgs.get('course')]);
 roverChanged();
+draft = clone(rover);
 const savedSpeed = load('speed');
 if (savedSpeed) { $('speed').value = savedSpeed; ctl.speed = savedSpeed === 'max' ? Infinity : Number(savedSpeed); }
 const savedPath = load('srcPath');
 if (savedPath) $('srcPath').value = savedPath;
-const savedTab = load('tab');
+const savedTab = hashArgs.get('tab') ? 'tab-' + hashArgs.get('tab') + '-btn' : load('tab');
 if (savedTab && $(savedTab)) $(savedTab).click();
 buildPhys(); readPhys();
 $('courseJson').value = formatCourse(course);

@@ -1,39 +1,39 @@
-"""Build a team's SPIKE program from the modules they have bought.
+"""Build a team's SPIKE program from the software package they have bought.
 
-    python build.py movement colour --team "Rocket Rovers"
-    python build.py all --out spike_all_in_one.py
+    python build.py basic --team "Rocket Rovers"
+    python build.py wall_follower --team "Rocket Rovers"
+    python build.py explorer --team "Rocket Rovers"
+    python build.py all --out spike_all_in_one.py      (everything, for testing)
 
-The SPIKE App runs a single file, so this joins the chosen modules into one.
-Every team gets Setup. Modules that a chosen module needs are added
-automatically, and a module the team did not buy is replaced by a short
-"not installed" placeholder wherever other modules rely on it.
+The SPIKE App runs a single file, so this joins the package's modules into
+one. Every package has the basic functions (movement, the distance and
+colour sensors) and the setup_check tests; the two autonomy packages add
+the wall follower or the maze explorer.
 
-The result goes to builds/<team>.py unless --out says otherwise.
+The result goes to builds/<team>.py unless --out says otherwise. If that
+file already exists, its YOUR PROGRAM section is kept, so a team that
+upgrades does not lose its own code.
 """
 import argparse
 import datetime
 import os
 import re
-import sys
 
-VERSION = "1.0"     # change this whenever the modules change, so teams can say which they have
+VERSION = "1.1"     # change this whenever the modules change, so teams can say which they have
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULE_DIR = os.path.join(HERE, "modules")
 
-# The modules teams can buy, and what each one needs. "grid" is shared by
-# the two autonomy modules and is never sold on its own.
-NEEDS = {
-    "movement": [],
-    "distance": ["movement"],
-    "colour": ["movement"],
-    "grid": ["movement", "distance"],
-    "wall_follower": ["grid"],
-    "explorer": ["grid"],
+# The packages teams can buy: a name for the file header, and the modules in
+# it, in the order they go into the file. Setup always comes first. "grid"
+# is shared by the two autonomy packages.
+BASIC = ["setup", "movement", "distance", "colour"]
+PACKAGES = {
+    "basic": ("Basic functions", BASIC),
+    "wall_follower": ("Wall follower", BASIC + ["grid", "wall_follower"]),
+    "explorer": ("Maze explorer", BASIC + ["grid", "explorer"]),
+    "all": ("Everything (for testing)", BASIC + ["grid", "wall_follower", "explorer"]),
 }
-FOR_SALE = ["movement", "distance", "colour", "wall_follower", "explorer"]
-ORDER = ["movement", "distance", "colour", "grid", "wall_follower", "explorer"]
-PLACEHOLDERS = {"distance": "stub_distance", "colour": "stub_colour"}
 
 IMPORTS = """import motor
 import distance_sensor
@@ -46,9 +46,11 @@ from hub import port, motion_sensor, button"""
 
 
 def read_module(name):
-    """Split a module file into its #@title, #@about, #@constants, #@settings
-    and #@code parts. Constants go before the settings, so settings can use them."""
-    parts = {"title": "", "about": [], "constants": [], "settings": [], "code": []}
+    """Split a module file into its #@title, #@about, #@constants, #@settings,
+    #@tuning and #@code parts. Constants go before the settings, so settings
+    can use them. Settings are the ones every team must look at; tuning
+    settings go in a separate FINE TUNING block further down."""
+    parts = {"title": "", "about": [], "constants": [], "settings": [], "tuning": [], "code": []}
     part = None
     with open(os.path.join(MODULE_DIR, name + ".py"), encoding="utf-8") as f:
         for line in f.read().splitlines():
@@ -58,9 +60,9 @@ def read_module(name):
                 if part == "title":
                     parts["title"] = marker.group(2)
                 continue
-            if part in ("about", "constants", "settings", "code"):
+            if part in ("about", "constants", "settings", "tuning", "code"):
                 parts[part].append(line)
-    for key in ("about", "constants", "settings", "code"):
+    for key in ("about", "constants", "settings", "tuning", "code"):
         lines = parts[key]
         while lines and not lines[0].strip():
             lines.pop(0)
@@ -71,18 +73,6 @@ def read_module(name):
 
 def banner(title):
     return ["# " + "=" * 70, "# " + title, "# " + "=" * 70]
-
-
-def with_needs(chosen):
-    """The chosen modules plus everything they need."""
-    result = set()
-    todo = list(chosen)
-    while todo:
-        name = todo.pop()
-        if name not in result:
-            result.add(name)
-            todo.extend(NEEDS[name])
-    return result
 
 
 def program_section(included):
@@ -128,29 +118,25 @@ def program_section(included):
     return lines
 
 
-def build(chosen, team):
-    included = with_needs(chosen)
-    sections = ["setup"]
-    for name in ORDER:
-        if name in included:
-            sections.append(name)
-        elif name in PLACEHOLDERS:
-            sections.append(PLACEHOLDERS[name])
+def build(package, team):
+    title, sections = PACKAGES[package]
+    included = set(sections)
     modules = {name: read_module(name) for name in sections}
 
-    bought = [modules[n]["title"] for n in sections if n in FOR_SALE]
-    missing = [read_module(n)["title"] for n in FOR_SALE if n not in included]
-
-    out = banner("ROVER SOFTWARE" + (" - " + team if team else ""))
+    out = banner("ROVER SOFTWARE - " + title.upper() + (" - " + team if team else ""))
     out += [
-        "# Version " + VERSION + ", built " + datetime.date.today().isoformat() + " with: Setup, " + ", ".join(bought),
-        "# Not included: " + (", ".join(missing) if missing else "nothing - everything is installed"),
+        "# Package: " + title + ". Version " + VERSION + ", built " + datetime.date.today().isoformat() + ".",
+        "#",
+        "# YOU ONLY CHANGE TWO PARTS OF THIS FILE:",
+        "#   SETTINGS      just below: describe your rover and your course",
+        "#   YOUR PROGRAM  at the very bottom: choose or write what the rover does",
+        "# Everything in between is the rover software. Read it if you are curious,",
+        "# but do not change it. The User Manual explains every setting and function.",
         "#",
         "# 1. Copy this whole file into a new Python project in the SPIKE App.",
-        "# 2. Change the SETTINGS below to match your rover.",
+        "# 2. Change the SETTINGS to match your rover.",
         "# 3. Run setup_check (see YOUR PROGRAM at the bottom) and fix anything it reports.",
         "# 4. Choose your program at the bottom and run it.",
-        "# The User Manual explains every setting and function.",
         "# " + "=" * 70,
         "",
         IMPORTS,
@@ -170,6 +156,13 @@ def build(chosen, team):
             out += modules[name]["settings"]
     out += ["", ""]
 
+    out += banner("FINE TUNING - leave these alone unless the User Manual tells you to change them")
+    for name in sections:
+        if modules[name]["tuning"]:
+            out += ["", "# ---- " + modules[name]["title"] + " ----"]
+            out += modules[name]["tuning"]
+    out += ["", ""]
+
     for name in sections:
         out += banner(modules[name]["title"].upper())
         out += modules[name]["about"]
@@ -183,24 +176,18 @@ def build(chosen, team):
 
 def main():
     parser = argparse.ArgumentParser(description="Build a team's rover program.")
-    parser.add_argument("modules", nargs="+",
-                        help="modules to include: " + ", ".join(FOR_SALE) + ", or all")
+    parser.add_argument("package", choices=list(PACKAGES),
+                        help="the package the team bought (all = everything, for testing)")
     parser.add_argument("--team", default="", help="team name, for the file header")
     parser.add_argument("--out", help="output file (default builds/<team>.py)")
     args = parser.parse_args()
-
-    chosen = FOR_SALE if args.modules == ["all"] else args.modules
-    unknown = [m for m in chosen if m not in FOR_SALE]
-    if unknown:
-        sys.exit("Unknown module(s): " + ", ".join(unknown)
-                 + ". Choose from: " + ", ".join(FOR_SALE) + ", or all.")
 
     out = args.out
     if not out:
         slug = re.sub(r"[^a-z0-9]+", "_", (args.team or "rover").lower()).strip("_")
         out = os.path.join(HERE, "builds", slug + ".py")
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
-    text = build(chosen, args.team)
+    text = build(args.package, args.team)
     # Rebuilding must not wipe the team's own code: keep the YOUR PROGRAM
     # section of the file being replaced, if it has one.
     marker = "\n".join(banner("YOUR PROGRAM"))

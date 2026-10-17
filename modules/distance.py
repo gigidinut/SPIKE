@@ -7,7 +7,7 @@
 #   await measure_distance()         a careful reading, standing still
 #   await drive_to_wall(10)          drive forward until a wall is 10 cm away
 #   await drive_forward(80, stop_at_wall_cm=10)   drive 80 cm, or stop early for a wall
-#@settings
+#@tuning
 MAX_TRUSTED_CM = 180   # readings further than this count as "no echo". In a course
                        # where no straight path is over 2 m, a longer reading means
                        # the sound missed, not that the way is clear.

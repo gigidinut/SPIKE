@@ -14,7 +14,7 @@
 # NORTH is the way the rover faced when the program started. WEST is 90
 # degrees to its left, EAST 90 degrees to its right, SOUTH behind it, and
 # NORTH_WEST, NORTH_EAST, SOUTH_WEST, SOUTH_EAST are half way between.
-#@settings
+#@tuning
 DRIVE_SPEED = 400          # wheel speed when driving, degrees per second (max about 1000)
 DRIVE_SLOW_SPEED = 150     # wheel speed for the end of a drive, so it stops on the spot
 DRIVE_SLOW_ZONE_CM = 3     # slow down when this many cm from the end

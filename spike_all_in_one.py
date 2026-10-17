@@ -1,14 +1,18 @@
 # ======================================================================
-# ROVER SOFTWARE - All modules
+# ROVER SOFTWARE - EVERYTHING (FOR TESTING) - All modules
 # ======================================================================
-# Version 1.0, built 2026-10-17 with: Setup, Movement, Distance sensor, Colour sensor, Wall follower, Maze explorer
-# Not included: nothing - everything is installed
+# Package: Everything (for testing). Version 1.1, built 2026-10-17.
+#
+# YOU ONLY CHANGE TWO PARTS OF THIS FILE:
+#   SETTINGS      just below: describe your rover and your course
+#   YOUR PROGRAM  at the very bottom: choose or write what the rover does
+# Everything in between is the rover software. Read it if you are curious,
+# but do not change it. The User Manual explains every setting and function.
 #
 # 1. Copy this whole file into a new Python project in the SPIKE App.
-# 2. Change the SETTINGS below to match your rover.
+# 2. Change the SETTINGS to match your rover.
 # 3. Run setup_check (see YOUR PROGRAM at the bottom) and fix anything it reports.
 # 4. Choose your program at the bottom and run it.
-# The User Manual explains every setting and function.
 # ======================================================================
 
 import motor
@@ -20,7 +24,7 @@ import math
 import time
 from hub import port, motion_sensor, button
 
-SOFTWARE_VERSION = "1.0"     # which version of the software this is
+SOFTWARE_VERSION = "1.1"     # which version of the software this is
 
 # Compass directions, as gyro headings. NORTH is the way the rover faced when
 # the program started. Turning left makes the number bigger.
@@ -78,6 +82,34 @@ HUB_FACE_UP = motion_sensor.TOP
 
 MAX_RUN_SECONDS = 0            # end the run after this many seconds; 0 = no limit
 
+# ---- Colour sensor ----
+COLOURS_TO_FIND = [color.GREEN, color.RED]   # colours the rover reacts to
+COLOUR_PAUSE_MS = 5000     # how long to stop on a colour, in ms
+REACT_ONCE = True          # True: react to each colour only the first time it is found
+
+# ---- Grid moves ----
+COURSE_NORTH_CM = 220   # how far the course reaches from the start in each direction.
+COURSE_SOUTH_CM = 0     # The rover never moves outside it. SOUTH is 0 when the start
+COURSE_EAST_CM = 220    # is on the edge of the course, so the rover cannot wander
+COURSE_WEST_CM = 220    # out through the entrance.
+CHECK_BY_WALLS = True   # also check the floor next to each wall the rover meets, which its
+                        # path through the middle of the squares never reaches. Slower.
+
+# ---- Wall follower ----
+KEEP_WALL_ON_RIGHT = True   # True: keep the right hand on the wall. False: the left hand.
+
+# ---- Maze explorer ----
+HEAD_TOWARDS = None        # which way to search first when explore() gets no near= or towards=.
+                           # A heading in degrees: 0 = NORTH, 90 = WEST, 180 = SOUTH, -90 = EAST
+                           # (the names NORTH, WEST... work too). 30 = mostly north, a bit west.
+                           # None = no preference. Avoid exact diagonals like NORTH_WEST: north and
+                           # west then tie, and the rover just keeps going the way it faces.
+
+
+# ======================================================================
+# FINE TUNING - leave these alone unless the User Manual tells you to change them
+# ======================================================================
+
 # ---- Movement ----
 DRIVE_SPEED = 400          # wheel speed when driving, degrees per second (max about 1000)
 DRIVE_SLOW_SPEED = 150     # wheel speed for the end of a drive, so it stops on the spot
@@ -97,32 +129,13 @@ MAX_TRUSTED_CM = 180   # readings further than this count as "no echo". In a cou
                        # the sound missed, not that the way is clear.
 SETTLE_MS = 150        # wait this long after moving before a careful reading
 
-# ---- Colour sensor ----
-COLOURS_TO_FIND = [color.GREEN, color.RED]   # colours the rover reacts to
-COLOUR_PAUSE_MS = 5000     # how long to stop on a colour, in ms
-REACT_ONCE = True          # True: react to each colour only the first time it is found
-
 # ---- Grid moves ----
 STEP_CM = 12            # size of one grid square, and the length of one step, in cm.
                         # Smaller squares fit through narrower gaps but take longer.
 WALL_STOP_CM = 10       # a step stops early if the distance sensor sees a wall this close
-COURSE_NORTH_CM = 220   # how far the course reaches from the start in each direction.
-COURSE_SOUTH_CM = 0     # The rover never moves outside it. SOUTH is 0 when the start
-COURSE_EAST_CM = 220    # is on the edge of the course, so the rover cannot wander
-COURSE_WEST_CM = 220    # out through the entrance.
-CHECK_BY_WALLS = True   # also check the floor next to each wall the rover meets, which its
-                        # path through the middle of the squares never reaches. Slower.
 WALL_CHECK_GAP_CM = 5   # how close that check brings the front or back of the rover to the wall
 
-# ---- Wall follower ----
-KEEP_WALL_ON_RIGHT = True   # True: keep the right hand on the wall. False: the left hand.
-
 # ---- Maze explorer ----
-HEAD_TOWARDS = None        # which way to search first when explore() gets no near= or towards=.
-                           # A heading in degrees: 0 = NORTH, 90 = WEST, 180 = SOUTH, -90 = EAST
-                           # (the names NORTH, WEST... work too). 30 = mostly north, a bit west.
-                           # None = no preference. Avoid exact diagonals like NORTH_WEST: north and
-                           # west then tie, and the rover just keeps going the way it faces.
 HEAD_STRENGTH = 1          # how strongly to follow a hint: how many extra steps the rover will drive
                            # to reach a square one step further that way, or one step nearer the spot
 NO_ECHO_SQUARES = 2        # when a look gets no echo, count this many squares ahead as open
@@ -962,7 +975,6 @@ class ColourReached(Exception):
     moment the colour sensor arrives on the colour it is looking for."""
 
 
-colour_module_installed = True
 found_colours = []         # colours found so far, in the order they were found
 colour_spots = {}          # where each colour was first seen: colour -> (cm east, cm north)
 looking_for = None         # set by explore(find=...): the one colour that counts right now
@@ -1637,9 +1649,6 @@ async def explore(find=None, near=None, towards=None):
         print("explore: towards should be a heading in degrees, like towards=30 or towards=NORTH")
         end_run()
     print("=== EXPLORER START ===")
-    if find is not None and not colour_module_installed:
-        print("explore: find needs the Colour sensor module, which is not installed")
-        return False
 
     if near is None and towards is None:
         towards = HEAD_TOWARDS

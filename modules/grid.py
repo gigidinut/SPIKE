@@ -10,15 +10,16 @@
 #   await step(direction)            try to move one square: "done", "blocked" or "no room"
 #   await check_by_wall(direction)   sweep the colour sensor up to the wall ahead
 #@settings
-STEP_CM = 12            # size of one grid square, and the length of one step, in cm.
-                        # Smaller squares fit through narrower gaps but take longer.
-WALL_STOP_CM = 10       # a step stops early if the distance sensor sees a wall this close
 COURSE_NORTH_CM = 220   # how far the course reaches from the start in each direction.
 COURSE_SOUTH_CM = 0     # The rover never moves outside it. SOUTH is 0 when the start
 COURSE_EAST_CM = 220    # is on the edge of the course, so the rover cannot wander
 COURSE_WEST_CM = 220    # out through the entrance.
 CHECK_BY_WALLS = True   # also check the floor next to each wall the rover meets, which its
                         # path through the middle of the squares never reaches. Slower.
+#@tuning
+STEP_CM = 12            # size of one grid square, and the length of one step, in cm.
+                        # Smaller squares fit through narrower gaps but take longer.
+WALL_STOP_CM = 10       # a step stops early if the distance sensor sees a wall this close
 WALL_CHECK_GAP_CM = 5   # how close that check brings the front or back of the rover to the wall
 #@code
 def check_grid_settings():
