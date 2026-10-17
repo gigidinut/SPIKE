@@ -9,6 +9,7 @@
 #   await turn_right(45)          turn 45 degrees right
 #   await turn_to(WEST)           face a compass direction
 #   cm_driven()                   how far the last drive really went
+#   rover_position()              where the rover is: (cm right of the start, cm ahead of it)
 #
 # NORTH is the way the rover faced when the program started. WEST is 90
 # degrees to its left, EAST 90 degrees to its right, SOUTH behind it, and
@@ -45,11 +46,43 @@ SETTINGS_CHECKS.append(check_movement_settings)
 target_heading = 0     # the direction the rover is meant to be facing
 last_drive_cm = 0      # how far the last drive went (see cm_driven)
 
+# Where the rover is (the middle of its wheels), in cm from where it started:
+# EAST is to the right of the start, NORTH is straight ahead of it. Every
+# drive adds the distance it goes, in the direction the gyro says the rover
+# faces. Turning on the spot does not move it.
+position_east_cm = 0
+position_north_cm = 0
+driving_way = 0        # while a drive runs: 1 = forward, -1 = backward. 0 = not driving
+counted_degrees = 0    # wheel degrees of this drive already added to the position
+
+
+def update_position():
+    """Add the distance driven since the last update to the position."""
+    global position_east_cm, position_north_cm, counted_degrees
+    if driving_way == 0:
+        return
+    degrees = wheel_degrees()
+    cm = wheel_degrees_to_cm(degrees - counted_degrees) * driving_way
+    counted_degrees = degrees
+    # Split the distance into how far east and how far north it went. Facing
+    # NORTH (0) it is all north; facing WEST (90) it is all east, backwards.
+    angle = gyro_heading() * math.pi / 180      # degrees to radians
+    position_east_cm -= math.sin(angle) * cm
+    position_north_cm += math.cos(angle) * cm
+
+
+def rover_position():
+    """Where the rover is: (cm to the right of the start, cm ahead of the start).
+    Negative means left of the start, or behind it. Example: print(rover_position())"""
+    return (round(position_east_cm, 1), round(position_north_cm, 1))
+
 
 async def movement_tick():
-    """A short wait inside every movement. While it waits it also checks the
-    time limit and the colour sensor, so every move reacts to them."""
+    """A short wait inside every movement. While it waits it also keeps the
+    rover's position up to date and checks the time limit and the colour
+    sensor, so every move reacts to them."""
     await runloop.sleep_ms(TICK_MS)
+    update_position()
     check_time_limit()
     await check_colour()
 
@@ -66,48 +99,59 @@ async def drive(cm, speed, stop_at_wall_cm=0):
       "wall"   something came closer than stop_at_wall_cm
       "stuck"  the wheels stopped turning (pushing against something)
     """
-    global last_drive_cm
+    global last_drive_cm, driving_way, counted_degrees
     goal = cm_to_wheel_degrees(abs(cm))
     slow_from = goal - cm_to_wheel_degrees(DRIVE_SLOW_ZONE_CM)
     reset_wheel_counters()
+    counted_degrees = 0
+    if speed > 0:
+        driving_way = 1
+    else:
+        driving_way = -1
     result = "done"
     progress = 0     # wheel position at the last stuck check
     still_ms = 0     # how long the wheels have hardly moved
-    while wheel_degrees() < goal:
-        if stop_at_wall_cm > 0:
-            distance = read_distance()
-            if distance != -1 and distance < stop_at_wall_cm:
-                result = "wall"
-                break
+    try:
+        while wheel_degrees() < goal:
+            if stop_at_wall_cm > 0:
+                distance = read_distance()
+                if distance != -1 and distance < stop_at_wall_cm:
+                    result = "wall"
+                    break
 
-        # Slow down for the last few cm, or the rover rolls on past the end.
-        now_speed = speed
-        if wheel_degrees() > slow_from:
-            now_speed = DRIVE_SLOW_SPEED
-            if speed < 0:
-                now_speed = -DRIVE_SLOW_SPEED
+            # Slow down for the last few cm, or the rover rolls on past the end.
+            now_speed = speed
+            if wheel_degrees() > slow_from:
+                now_speed = DRIVE_SLOW_SPEED
+                if speed < 0:
+                    now_speed = -DRIVE_SLOW_SPEED
 
-        # Steering: error is how far the rover has drifted. If it has
-        # drifted right (error above 0), the right wheel speeds up and the
-        # left wheel slows down, which turns it back left - and the other
-        # way round. The bigger the drift, the harder it steers.
-        error = heading_difference(target_heading, gyro_heading())
-        steer = error * STEERING
-        limit = abs(now_speed) / 2
-        steer = max(-limit, min(limit, steer))
-        set_wheel_speeds(now_speed - steer, now_speed + steer)
-        await movement_tick()
+            # Steering: error is how far the rover has drifted. If it has
+            # drifted right (error above 0), the right wheel speeds up and the
+            # left wheel slows down, which turns it back left - and the other
+            # way round. The bigger the drift, the harder it steers.
+            error = heading_difference(target_heading, gyro_heading())
+            steer = error * STEERING
+            limit = abs(now_speed) / 2
+            steer = max(-limit, min(limit, steer))
+            set_wheel_speeds(now_speed - steer, now_speed + steer)
+            await movement_tick()
 
-        # Stuck check: while the motors run, the wheels should keep turning.
-        if wheel_degrees() - progress > 10:
-            progress = wheel_degrees()
-            still_ms = 0
-        else:
-            still_ms += TICK_MS
-            if still_ms >= STUCK_MS:
-                result = "stuck"
-                break
-    stop()
+            # Stuck check: while the motors run, the wheels should keep turning.
+            if wheel_degrees() - progress > 10:
+                progress = wheel_degrees()
+                still_ms = 0
+            else:
+                still_ms += TICK_MS
+                if still_ms >= STUCK_MS:
+                    result = "stuck"
+                    break
+    finally:
+        # This part also runs when something cuts the drive short - end_run(),
+        # or explore(find=...) finding its colour - so the position stays right.
+        stop()
+        update_position()
+        driving_way = 0
     last_drive_cm = wheel_degrees_to_cm(wheel_degrees())
     print("drive: " + result + " after " + str(round(last_drive_cm, 1)) + " cm")
     return result

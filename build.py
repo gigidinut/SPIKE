@@ -101,6 +101,15 @@ def program_section(included):
             "    # await drive_to_wall(10)",
             "    # await turn_to(WEST)",
         ]
+    if "explorer" in included and "colour" in included:
+        lines += [
+            "    # Another example: find colours in order with the Maze explorer. The lines",
+            "    # after each explore(find=...) are your actions for that colour, and may drive.",
+            "    # await explore(find=color.GREEN, near=(-30, 110))   # about 30 cm left, 110 cm ahead",
+            "    # await drive_forward(8)                             # e.g. get the payload over it",
+            "    # ...your payload code here...",
+            "    # await explore(find=color.RED, towards=30)          # mostly north, a bit west",
+        ]
     choices = ["my_program", "setup_check"]
     if "wall_follower" in included:
         choices.append("follow_wall")

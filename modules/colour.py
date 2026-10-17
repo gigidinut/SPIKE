@@ -6,6 +6,15 @@
 # drive and turn, including the autonomous searches, without you calling
 # anything.
 #
+# Colours that must be found in a set ORDER: use explore(find=...) from the
+# Maze explorer instead (see the MAZE EXPLORER section). Once your program
+# uses it, on_colour_found() no longer runs. A colour only counts when an
+# explore(find=...) is looking for it, so driving over RED while looking
+# for GREEN does nothing.
+#
+# The rover also remembers where it first saw each colour - even one it did
+# not react to - so the explorer can go straight back to it later.
+#
 #   on_colour_found(colour)   what to do on a colour - WRITE YOUR OWN ACTIONS HERE
 #   read_colour()             the colour under the sensor right now
 #   found_colours             a list of the colours found so far
@@ -23,7 +32,16 @@ def check_colour_settings():
 
 SETTINGS_CHECKS.append(check_colour_settings)
 
+class ColourReached(Exception):
+    """explore(find=...) uses this to stop whatever the rover is doing the
+    moment the colour sensor arrives on the colour it is looking for."""
+
+
+colour_module_installed = True
 found_colours = []         # colours found so far, in the order they were found
+colour_spots = {}          # where each colour was first seen: colour -> (cm east, cm north)
+looking_for = None         # set by explore(find=...): the one colour that counts right now
+react_to_colours = True    # explore(find=...) sets this to False: on_colour_found() is then off
 last_colour = None         # what the sensor saw last time
 sensor_missing = False
 
@@ -50,6 +68,11 @@ async def on_colour_found(colour):
     #    think the rover is where it stopped. Other motors, the lights and
     #    sounds are fine.
     #
+    #    Need to drive, or find colours in a set order? Use explore(find=...)
+    #    instead (see the MAZE EXPLORER section): the lines after it in your
+    #    program are your actions, and they may drive. This function then
+    #    does not run at all.
+    #
     # ======================================================================
     print("COLOUR: found " + colour_name(colour) + ", pausing "
           + str(COLOUR_PAUSE_MS // 1000) + " s")
@@ -74,6 +97,16 @@ def read_colour():
         return None
 
 
+def colour_sensor_position():
+    """Where the colour sensor is over the floor right now, in cm from the
+    start: (cm east, cm north). It sits COLOUR_SENSOR_POSITION_CM in front of
+    the middle of the wheels - behind them if that number is negative."""
+    angle = gyro_heading() * math.pi / 180      # degrees to radians
+    east = position_east_cm - math.sin(angle) * COLOUR_SENSOR_POSITION_CM
+    north = position_north_cm + math.cos(angle) * COLOUR_SENSOR_POSITION_CM
+    return (east, north)
+
+
 async def check_colour():
     """Every movement calls this many times a second. It reacts only at the
     moment the sensor ARRIVES on a colour, so sitting on a patch counts once."""
@@ -81,7 +114,20 @@ async def check_colour():
     colour = read_colour()
     just_arrived = colour != last_colour
     last_colour = colour
-    if not just_arrived or colour not in COLOURS_TO_FIND:
+    if not just_arrived or colour is None:
+        return
+    if colour not in colour_spots:
+        colour_spots[colour] = colour_sensor_position()
+    if looking_for is not None:
+        # explore(find=...) is running, and only its colour counts.
+        if colour == looking_for:
+            stop()
+            print("COLOUR: found " + colour_name(colour))
+            if colour not in found_colours:
+                found_colours.append(colour)
+            raise ColourReached()
+        return
+    if not react_to_colours or colour not in COLOURS_TO_FIND:
         return
     if REACT_ONCE and colour in found_colours:
         return
