@@ -3,11 +3,13 @@
 # ======================================================================
 # Package: Everything (for testing). Version 1.1, built 2026-10-17.
 #
-# YOU ONLY CHANGE TWO PARTS OF THIS FILE:
-#   SETTINGS      just below: describe your rover and your course
-#   YOUR PROGRAM  at the very bottom: choose or write what the rover does
-# Everything in between is the rover software. Read it if you are curious,
-# but do not change it. The User Manual explains every setting and function.
+# YOU ONLY CHANGE THESE PARTS OF THIS FILE:
+#   SETTINGS           just below: describe your rover and your course
+#   YOUR PROGRAM       at the very bottom: choose or write what the rover does
+#   on_colour_found()  only for your own colour actions: search the file
+#                      for ADD YOUR OWN ACTIONS HERE
+# Everything else is the rover software. Read it if you are curious, but
+# do not change it. The User Manual explains every setting and function.
 #
 # 1. Copy this whole file into a new Python project in the SPIKE App.
 # 2. Change the SETTINGS to match your rover.
