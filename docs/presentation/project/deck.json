@@ -1,0 +1,17 @@
+{
+  "v": 4,
+  "createdOnFiles": {"v": 1, "at": "2026-10-17T21:55:00Z"},
+  "lists": "css",
+  "title": "Rover Software for Teams",
+  "order": ["cover", "challenge", "does", "blocks", "three", "compare", "basic", "wall", "explorer", "coverage", "choose", "every", "sim", "design", "firsthour", "threeparts", "close"],
+  "sections": {
+    "s1": {"description": "Why autonomy matters and what the software does for every team", "start": "cover"},
+    "s2": {"description": "The three packages, how each one works and how they differ", "start": "three"},
+    "s3": {"description": "What every team gets, and how to get started", "start": "every"}
+  },
+  "faces": {
+    "oswald": {"family": "Oswald", "href": "https://fonts.googleapis.com/css2?family=Oswald:wght@400..700&display=swap"},
+    "rubik": {"family": "Rubik", "href": "https://fonts.googleapis.com/css2?family=Rubik:wght@400..700&display=swap"}
+  },
+  "designSystems": []
+}
