@@ -1,0 +1,2104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rover Course Simulator (local)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #E9EDE8; --panel: #F6F8F4; --raised: #FFFFFF; --ink: #1B2425; --muted: #5B6867;
+  --line: #CFD7D0; --floor: #F8F9F4; --grid: #E6EAE2; --grid-major: #CDD5CB; --off-floor: #D9DFD6;
+  --wall: #B67C55; --wall-edge: #4A3121; --path: #2459C4; --sonar: #D4861A;
+  --green: #2E9E57; --red: #CF3A33; --accent: #2459C4; --accent-ink: #FFFFFF;
+  --ok: #2E8B4C; --warn: #A86E12; --bad: #C0392F;
+  --k-turn: #7C8B89; --k-leg: #2459C4; --k-block: #C0392F; --k-radar: #A86E12; --k-decision: #6A47B5;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #0F1415; --panel: #151C1E; --raised: #1B2427; --ink: #E2E9E6; --muted: #92A09E;
+    --line: #29353A; --floor: #121A1C; --grid: #1A2427; --grid-major: #283539; --off-floor: #090D0E;
+    --wall: #8C5B3D; --wall-edge: #E0B996; --path: #74A6FF; --sonar: #F2A43C;
+    --green: #3DBA6B; --red: #EA5650; --accent: #74A6FF; --accent-ink: #0B1220;
+    --ok: #4CC07A; --warn: #E2A53E; --bad: #F06A62;
+    --k-turn: #8A9997; --k-leg: #74A6FF; --k-block: #F06A62; --k-radar: #E2A53E; --k-decision: #A88BF0;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 14px; line-height: 1.45; padding-inline: 16px; padding-block: 14px 24px; }
+.app { max-width: 1480px; margin-inline: auto; display: grid; gap: 12px; }
+.bar { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 12px 20px; border-bottom: 1px solid var(--line); padding-bottom: 12px; }
+.brand h1 { font-family: var(--font-display); font-weight: 700; font-size: 30px; line-height: 1; margin: 0; }
+.brand p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.brand code, code { font-family: var(--font-mono); font-size: 12px; }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px; }
+.field { display: grid; gap: 3px; }
+.field > span { font-family: var(--font-display); font-weight: 600; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+select, input[type="number"], input[type="text"], input[type="search"], textarea { font: inherit; color: var(--ink); background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; }
+button { font: inherit; font-weight: 600; color: var(--ink); background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 7px 12px; cursor: pointer; }
+button:hover:not(:disabled) { border-color: var(--muted); }
+button:disabled { opacity: 0.45; cursor: default; }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) 420px; gap: 14px; align-items: start; }
+@media (max-width: 980px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-bottom: 8px; }
+.tools, .viewtools { display: inline-flex; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.tools button, .viewtools button { border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 6px 11px; font-family: var(--font-display); font-size: 15px; letter-spacing: 0.03em; }
+.tools button:last-child, .viewtools button:last-child { border-right: 0; }
+.tools button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.swatch { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; vertical-align: 1px; }
+.check { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: 13px; cursor: pointer; }
+.stage { position: relative; height: min(76vh, 860px); min-height: 380px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--floor); }
+canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.hud { position: absolute; left: 10px; top: 10px; display: flex; flex-wrap: wrap; gap: 6px; pointer-events: none; max-width: calc(100% - 20px); }
+.chip { font-family: var(--font-mono); font-size: 12px; background: var(--raised); border: 1px solid var(--line); border-radius: 999px; padding: 2px 9px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip.status { font-family: var(--font-display); font-size: 14px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.chip.s-running, .chip.s-loading { color: var(--accent); border-color: var(--accent); }
+.chip.s-paused { color: var(--warn); border-color: var(--warn); }
+.chip.s-goal { color: var(--ok); border-color: var(--ok); }
+.chip.s-stopped, .chip.s-error, .chip.s-timeout { color: var(--bad); border-color: var(--bad); }
+.hint { margin: 6px 2px 0; color: var(--muted); font-size: 12.5px; font-family: var(--font-mono); min-height: 1.4em; }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; display: grid; min-width: 0; }
+.tabs { display: flex; border-bottom: 1px solid var(--line); }
+.tabs button { flex: 1; border: 0; border-radius: 0; background: transparent; padding: 10px 8px; font-family: var(--font-display); font-size: 16px; letter-spacing: 0.04em; color: var(--muted); border-bottom: 2px solid transparent; }
+.tabs button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
+.tabpane { padding: 12px; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.tabpane[hidden] { display: none !important; }
+.pane-note { margin: 0; color: var(--muted); font-size: 12.5px; }
+.logbar { display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; }
+.log { height: min(64vh, 700px); min-height: 280px; overflow-y: auto; overflow-x: hidden; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); font-family: var(--font-mono); font-size: 12px; line-height: 1.4; }
+.log ol { list-style: none; margin: 0; padding: 4px 0; }
+.log li { display: grid; grid-template-columns: 52px 8px minmax(0, 1fr); gap: 8px; align-items: baseline; padding: 2px 8px; cursor: pointer; border-left: 2px solid transparent; }
+.log li:hover, .log li.sel { background: var(--bg); }
+.log li.sel { border-left-color: var(--ink); }
+.log .t { color: var(--muted); text-align: right; font-variant-numeric: tabular-nums; }
+.log .k { width: 8px; height: 8px; border-radius: 2px; background: var(--k-turn); align-self: center; }
+.log .x { overflow-wrap: anywhere; white-space: pre-wrap; }
+.log li.k-leg .k { background: var(--k-leg); }
+.log li.k-block .k { background: var(--k-block); }
+.log li.k-radar .k { background: var(--k-radar); }
+.log li.k-decision .k { background: var(--k-decision); }
+.log li.k-decision .x, .log li.k-goal .x, .log li.k-checkpoint .x { font-weight: 500; }
+.log li.k-checkpoint .k { background: var(--green); }
+.log li.k-goal .k { background: var(--red); }
+.log li.k-error .x { color: var(--bad); }
+.log.hide-turns li.k-turn { display: none; }
+.log .empty { padding: 14px; color: var(--muted); font-family: var(--font-body); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12px; color: var(--muted); }
+.pgroup h3 { margin: 4px 0 6px; font-family: var(--font-display); font-weight: 700; font-size: 16px; letter-spacing: 0.06em; text-transform: uppercase; }
+.plist { max-height: 46vh; overflow-y: auto; }
+.prow { display: grid; grid-template-columns: minmax(0, 1fr) 96px; gap: 2px 10px; align-items: center; padding: 5px 0; border-top: 1px solid var(--line); }
+.prow label { font-family: var(--font-mono); font-size: 12px; overflow-wrap: anywhere; }
+.prow input, .prow select { width: 100%; font-family: var(--font-mono); font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.prow .help { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.prow.changed label::after { content: " · changed"; color: var(--warn); font-family: var(--font-body); }
+.btnrow { display: flex; flex-wrap: wrap; gap: 8px; }
+textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-size: 12px; resize: vertical; }
+.msg { font-size: 12.5px; min-height: 1.3em; margin: 0; }
+.msg.bad { color: var(--bad); }
+.msg.ok { color: var(--ok); }
+.rsum { display: grid; gap: 3px; font-size: 12.5px; background: var(--raised); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+.rsum b { font-family: var(--font-display); font-size: 15px; letter-spacing: 0.03em; }
+.rsum .warn { color: var(--warn); }
+.rsum .bad { color: var(--bad); }
+.rsum .good { color: var(--ok); }
+.rtools { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 7px; overflow: hidden; }
+.rtools button { flex: 1; border: 0; border-radius: 0; border-right: 1px solid var(--line); padding: 5px 6px; font-family: var(--font-display); font-size: 14px; letter-spacing: 0.03em; }
+.rtools button:last-child { border-right: 0; }
+.rtools button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.rstage { height: 300px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--floor); }
+.rprops { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 10px; }
+.rprops:empty { display: none; }
+.rprops .field input, .rprops .field select { width: 100%; font-family: var(--font-mono); font-size: 13px; }
+.rprops .full { grid-column: 1 / -1; }
+.rjson summary { cursor: pointer; font-family: var(--font-display); font-weight: 600; font-size: 15px; letter-spacing: 0.03em; }
+.rjson[open] summary { margin-bottom: 8px; }
+.rjson { display: grid; gap: 8px; }
+.srcline { font-family: var(--font-mono); font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <h1>Rover Course Simulator</h1>
+      <p>Runs <code id="srcName">spike_all_in_one.py</code> itself (Python in the browser), re-read from disk on every Run. Units are cm; yaw is + to the left.</p>
+    </div>
+    <div class="controls">
+      <label class="field"><span>Program</span><select id="entry"><option value="">As in the file</option></select></label>
+      <button id="btnRun" class="primary" type="button" disabled>Run</button>
+      <button id="btnPause" type="button" disabled>Pause</button>
+      <button id="btnStep" type="button" disabled title="Run until the next printed line, then pause">Step</button>
+      <button id="btnReset" type="button">Reset</button>
+      <label class="field"><span>Speed</span>
+        <select id="speed"><option value="1">1×</option><option value="2">2×</option><option value="5" selected>5×</option><option value="10">10×</option><option value="25">25×</option><option value="max">Max</option></select>
+      </label>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section>
+      <div class="toolbar">
+        <div class="tools" role="toolbar" aria-label="Course editing tools">
+          <button type="button" data-tool="none" aria-pressed="true">Look</button>
+          <button type="button" data-tool="wall" aria-pressed="false">Wall</button>
+          <button type="button" data-tool="green" aria-pressed="false"><span class="swatch" style="background:var(--green)"></span>Green</button>
+          <button type="button" data-tool="red" aria-pressed="false"><span class="swatch" style="background:var(--red)"></span>Red</button>
+          <button type="button" data-tool="start" aria-pressed="false">Start</button>
+          <button type="button" data-tool="erase" aria-pressed="false">Erase</button>
+        </div>
+        <div class="viewtools" role="group" aria-label="View">
+          <button type="button" id="btnZoomOut" title="Zoom out" aria-label="Zoom out">&minus;</button>
+          <button type="button" id="btnZoomIn" title="Zoom in" aria-label="Zoom in">+</button>
+          <button type="button" id="btnFit" title="Fit the view to the course">Fit course</button>
+          <button type="button" id="btnFloor" title="Show the whole 10 m by 10 m floor">Whole floor</button>
+        </div>
+        <label class="check"><input type="checkbox" id="snap" checked> Snap 5 cm</label>
+        <label class="check"><input type="checkbox" id="showEchoes" checked> Echoes</label>
+        <label class="check"><input type="checkbox" id="showPath" checked> Path</label>
+        <label class="check"><input type="checkbox" id="showMap" checked> Map</label>
+      </div>
+      <div class="stage" id="stage">
+        <canvas id="cv" aria-label="Course map with the simulated rover"></canvas>
+        <div class="hud" aria-live="polite">
+          <span class="chip status s-loading" id="hudStatus">Loading Python</span>
+          <span class="chip" id="hudTime">t 0.0 s</span>
+          <span class="chip" id="hudLegs">steps 0</span>
+          <span class="chip" id="hudSweeps">looks 0</span>
+          <span class="chip" id="hudGreen">colours: none yet</span>
+          <span class="chip s-error" id="hudSettings" hidden>Settings do not match the rover - see the Rover tab</span>
+        </div>
+      </div>
+      <p class="hint" id="hint">Drag with Wall, Green or Red to draw. Click with Start or Erase. Scroll to zoom; drag with Look to move the view. The floor is 10 m by 10 m. Keys: R run · Space pause · N step.</p>
+    </section>
+
+    <aside class="panel">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" id="tab-log-btn" aria-selected="true" aria-controls="tab-log">Log</button>
+        <button type="button" role="tab" id="tab-params-btn" aria-selected="false" aria-controls="tab-params">Parameters</button>
+        <button type="button" role="tab" id="tab-rover-btn" aria-selected="false" aria-controls="tab-rover">Rover</button>
+        <button type="button" role="tab" id="tab-course-btn" aria-selected="false" aria-controls="tab-course">Course</button>
+        <button type="button" role="tab" id="tab-code-btn" aria-selected="false" aria-controls="tab-code">Code</button>
+      </div>
+
+      <div class="tabpane" id="tab-log" role="tabpanel">
+        <div class="logbar">
+          <label class="check"><input type="checkbox" id="showTurns"> Show drive and turn lines</label>
+          <label class="check"><input type="checkbox" id="follow" checked> Follow</label>
+        </div>
+        <div class="legend">
+          <span><span class="swatch" style="background:var(--green)"></span>colour found</span>
+          <span><span class="swatch" style="background:var(--red)"></span>run finished</span>
+          <span><span class="swatch" style="background:var(--k-leg)"></span>step done</span>
+          <span><span class="swatch" style="background:var(--k-block)"></span>step blocked</span>
+          <span><span class="swatch" style="background:var(--k-decision)"></span>decision</span>
+          <span><span class="swatch" style="background:var(--k-radar)"></span>look / wall check</span>
+        </div>
+        <div class="log hide-turns" id="log"><div class="empty" id="logEmpty">Everything the program prints appears here. Click a line to see where the rover was when it printed it.</div><ol id="logList"></ol></div>
+      </div>
+
+      <div class="tabpane" id="tab-params" role="tabpanel" hidden>
+        <p class="pane-note">Constants are read from your file each Run. A change here overrides the value for the simulation only; your file is not modified.</p>
+        <input type="search" id="paramFilter" placeholder="Filter constants" aria-label="Filter constants">
+        <div class="pgroup"><h3>From your file</h3><div class="plist" id="constParams"><p class="pane-note">Loads with the file.</p></div></div>
+        <div class="pgroup"><h3>Sensor and motion model</h3><div id="physParams"></div></div>
+        <div class="btnrow"><button type="button" id="btnParamReset">Clear all overrides</button></div>
+      </div>
+
+      <div class="tabpane" id="tab-rover" role="tabpanel" hidden>
+        <p class="pane-note">The simulated rover, seen from above, in cm. Make it match the rover you built: its outline, which wheels the motors drive, and where the sensors are.</p>
+        <label class="field"><span>Preset</span>
+          <select id="roverPreset">
+            <option value="example">Two drive wheels and a caster</option>
+            <option value="skid4">Four wheels, two motors (skid steer)</option>
+            <option value="skid6">Six wheels, two motors (skid steer)</option>
+            <option value="reardrive">Rear drive, two free front wheels</option>
+          </select>
+        </label>
+        <div class="btnrow"><button type="button" id="btnRoverPreset">Load preset</button></div>
+        <label class="field"><span>Name</span><input type="text" id="roverName" spellcheck="false"></label>
+        <div class="rtools" role="toolbar" aria-label="Rover editing tools">
+          <button type="button" data-rtool="select" aria-pressed="true" title="Click a part to change it; drag to move it">Select</button>
+          <button type="button" data-rtool="box" aria-pressed="false" title="Drag to add a box to the body">Box</button>
+          <button type="button" data-rtool="wheel" aria-pressed="false" title="Click to add a wheel">Wheel</button>
+          <button type="button" data-rtool="caster" aria-pressed="false" title="Click to add a caster or ball">Caster</button>
+          <button type="button" data-rtool="distance" aria-pressed="false" title="Click to add a distance sensor">Distance</button>
+          <button type="button" data-rtool="colour" aria-pressed="false" title="Click to add a colour sensor">Colour</button>
+        </div>
+        <div class="rstage"><canvas id="rcv" aria-label="The rover seen from above, front at the top"></canvas></div>
+        <p class="hint" id="rhint">Front at the top. Grid lines every cm; bold every 5 cm. Drag a selected box's corner to resize it.</p>
+        <div class="rprops" id="roverProps"></div>
+        <p class="msg" id="roverMsg"></p>
+        <div class="rsum" id="roverSummary"></div>
+        <div class="pgroup"><h3>Your program and this rover</h3>
+          <div class="rsum" id="roverCheck"><span>Loads with the file.</span></div>
+          <div class="btnrow" style="margin-top:8px"><button type="button" id="btnCopySettings">Copy settings for my program</button></div>
+        </div>
+        <div class="pgroup"><h3>Match my real rover</h3>
+          <p class="pane-note">Optional. Leave a box empty to use the simulator's estimate.</p>
+          <div class="prow"><label for="mTurnPoint">Turning point, cm behind the front</label><input type="number" step="any" id="mTurnPoint">
+            <div class="help">setup_check test 6 finds it: mark the floor at the very front of the rover, in the middle, let it spin half a turn, and mark the front again. The turning point is half way between the two marks.</div></div>
+          <div class="prow"><label for="mQuarter">Motor degrees for a quarter turn</label><input type="number" step="any" id="mQuarter">
+            <div class="help">How far each drive motor turns while the rover spins 90 degrees on the spot. setup_check test 5 prints it.</div></div>
+        </div>
+        <details class="rjson"><summary>Rover as JSON - to save it, or share it with your team</summary>
+        <label class="field"><span>Rover as JSON (cm; x to the right, y forward)</span><textarea id="roverJson" spellcheck="false"></textarea></label>
+        <div class="btnrow"><button type="button" id="btnApplyRover">Apply JSON</button><button type="button" id="btnCopyRover">Copy JSON</button></div>
+        <p class="pane-note">Measure from any point you like; the presets use the middle of the drive wheels. <code>body</code> is a list of boxes [x0, x1, y0, y1]. Each wheel has <code>x</code>, <code>y</code> and diameter <code>d</code>; a driven wheel also has the motor's <code>port</code>, <code>forward</code> (the speed sign that rolls it forward, 1 or -1) and, if it is geared, <code>gear</code> (motor turns per wheel turn). Wheels that swivel, and ball casters, have <code>"caster": true</code>. Sensors have <code>type</code> ("distance" or "colour"), <code>port</code>, <code>x</code>, <code>y</code> and, for a sensor that points sideways, <code>angle</code> (degrees, + is to the left).</p>
+        </details>
+      </div>
+
+      <div class="tabpane" id="tab-course" role="tabpanel" hidden>
+        <label class="field"><span>Preset</span>
+          <select id="preset">
+            <option value="drawing">Course drawing (0.2 cm per px)</option>
+            <option value="arena">Test arena with box and inside corner</option>
+            <option value="empty">Empty 2 m room</option>
+          </select>
+        </label>
+        <div class="btnrow"><button type="button" id="btnPreset">Load preset</button><button type="button" id="btnClearWalls">Remove all walls</button></div>
+        <label class="field"><span>Course as JSON (cm, y up)</span><textarea id="courseJson" spellcheck="false"></textarea></label>
+        <div class="btnrow"><button type="button" id="btnApplyJson">Apply JSON</button><button type="button" id="btnCopyJson">Copy JSON</button></div>
+        <p class="msg" id="jsonMsg"></p>
+        <p class="pane-note">Each wall is [x0, x1, y0, y1]. Green and red are the same shape, or null. Start is [x, y]; the rover starts facing up.</p>
+      </div>
+
+      <div class="tabpane" id="tab-code" role="tabpanel" hidden>
+        <label class="field"><span>File to run</span><input type="text" id="srcPath" value="../spike_all_in_one.py" spellcheck="false"></label>
+        <div class="btnrow"><button type="button" id="btnPick">Choose a file instead</button><button type="button" id="btnReload">Reload now</button></div>
+        <p class="srcline" id="srcInfo">Not loaded yet.</p>
+        <p class="msg" id="srcMsg"></p>
+        <p class="pane-note">Start the page with <code>python sim/serve_sim.py</code> from the SPIKE folder, so it can read the file at that path fresh on every Run. Opened any other way, use "Choose a file instead".</p>
+        <p class="pane-note">The code runs on desktop Python 3.12, not the hub's MicroPython, with fake <code>motor</code>, <code>distance_sensor</code>, <code>color_sensor</code>, <code>color</code>, <code>runloop</code>, <code>hub</code> and <code>time</code> modules. It catches logic bugs; hub-only problems still need the real rover.</p>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<!-- Python side of the bridge: fake SPIKE modules that call into the JS physics -->
+<script type="text/x-python" id="bootstrap">
+import sys, types, asyncio, builtins, json, traceback
+import js
+
+_sim = js.simBridge
+_tasks = []
+_ns = {}
+
+
+class _Noop:
+    """Stands in for any hub feature the simulator does not model."""
+    def __call__(self, *a, **k):
+        return _Noop()
+    def __getattr__(self, name):
+        return _Noop()
+    def __await__(self):
+        return iter(())
+    def __bool__(self):
+        return False
+
+
+class _NS(types.SimpleNamespace):
+    def __getattr__(self, name):
+        return _Noop()
+
+
+def _module(name, **attrs):
+    m = types.ModuleType(name)
+    m.__dict__.update(attrs)
+    m.__getattr__ = lambda attr: _Noop()     # unknown names become no-ops
+    sys.modules[name] = m
+    return m
+
+
+_L = "ABCDEF"
+port = _NS(A=0, B=1, C=2, D=3, E=4, F=5)
+
+
+# ---- Readings, and loops that never wait ----
+# On the hub every reading takes a little time. Here time only moves on when
+# the program awaits. A loop that reads sensors but never awaits would never
+# see the rover move, so after many readings in a row time moves on 1 ms per
+# reading - and after very many the program stops with an explanation
+# instead of freezing the page.
+_reads = [0]
+
+def _reading():
+    _reads[0] += 1
+    if _reads[0] > 200:
+        _sim.advance(1)
+    if _reads[0] > 60000:
+        raise RuntimeError("A loop in your program reads sensors over and over but never waits. "
+                           "Put  await runloop.sleep_ms(10)  inside the loop: in the simulator the "
+                           "rover can only move while your program waits.")
+
+def _waited():
+    _reads[0] = 0
+
+
+# ---- Motors ----
+def _speed(velocity):
+    if isinstance(velocity, bool) or not isinstance(velocity, int):
+        raise TypeError("motor speeds must be whole numbers, not " + repr(velocity)
+                        + " - use int(...). The hub stops with an error here too.")
+    return velocity
+
+def _run(p, velocity, *a, **k):
+    _sim.motorRun(_L[p], _speed(velocity))
+
+def _stop(p, *a, **k):
+    _sim.motorStop(_L[p])
+
+def _rel(p):
+    _reading()
+    return int(_sim.relPos(_L[p]))
+
+def _reset_rel(p, position=0):
+    _sim.resetRelPos(_L[p], position)
+
+def _abs(p):
+    return (_rel(p) + 180) % 360 - 180
+
+_moves = []      # movements running in the background, cancelled when a run ends
+
+def _movement(coro):
+    """Like the hub: a motor movement starts at once, even without await.
+    Awaiting it waits until it has finished."""
+    t = asyncio.ensure_future(coro)
+    _moves.append(t)
+    return t
+
+def _allowed_ms(degrees, velocity):
+    return int(abs(degrees) / max(1, abs(velocity)) * 3000) + 1000
+
+async def _until_turned(ports, degrees, allowed_ms):
+    starts = [int(_sim.relPos(_L[q])) for q in ports]
+    waited = 0
+    while max(abs(int(_sim.relPos(_L[q])) - s0) for q, s0 in zip(ports, starts)) < degrees:
+        await _sim.sleep(10)
+        waited += 10
+        if waited >= allowed_ms:
+            return            # stalled - give up, as a stalled motor does
+    _waited()
+
+def _run_for_degrees(p, degrees, velocity, *a, **k):
+    _speed(velocity)
+    way = (1 if degrees >= 0 else -1) * (1 if velocity >= 0 else -1)
+    _sim.motorRun(_L[p], way * abs(velocity))
+    async def finish():
+        await _until_turned([p], abs(degrees), _allowed_ms(degrees, velocity))
+        _sim.motorStop(_L[p])
+    return _movement(finish())
+
+def _run_for_time(p, duration, velocity, *a, **k):
+    _sim.motorRun(_L[p], _speed(velocity))
+    async def finish():
+        await _sim.sleep(duration)
+        _sim.motorStop(_L[p])
+    return _movement(finish())
+
+def _run_to_relative_position(p, position, velocity, *a, **k):
+    _speed(velocity)
+    diff = position - int(_sim.relPos(_L[p]))
+    _sim.motorRun(_L[p], abs(velocity) if diff >= 0 else -abs(velocity))
+    async def finish():
+        await _until_turned([p], abs(diff), _allowed_ms(diff, velocity))
+        _sim.motorStop(_L[p])
+    return _movement(finish())
+
+_module("motor", run=_run, stop=_stop, relative_position=_rel, absolute_position=_abs,
+        reset_relative_position=_reset_rel,
+        velocity=lambda p: (_reading(), int(_sim.motorVel(_L[p])))[1],
+        run_for_degrees=_run_for_degrees, run_for_time=_run_for_time,
+        run_to_relative_position=_run_to_relative_position,
+        COAST=0, BRAKE=1, HOLD=2, CONTINUE=3, SMART_COAST=4, SMART_BRAKE=5)
+
+
+# ---- Motor pairs: two drive motors moved together ----
+# Like the hub, a pair treats its left motor as mounted mirror-image, so
+# "forward" turns the left motor backwards.
+_pairs = {}
+
+def _pair(pair, left, right):
+    _pairs[pair] = (left, right)
+    _sim.setDrivePorts(_L[left], _L[right])
+
+def _ports(pair):
+    if pair not in _pairs:
+        raise RuntimeError("pair the motors first, e.g. motor_pair.pair(motor_pair.PAIR_1, port.B, port.A)")
+    return _pairs[pair]
+
+def _set_pair(pair, left_v, right_v):
+    left, right = _ports(pair)
+    _sim.motorRun(_L[left], -_speed(left_v))
+    _sim.motorRun(_L[right], _speed(right_v))
+
+def _steer(steering, velocity):
+    s = max(-100, min(100, steering))
+    if s >= 0:
+        return velocity, int(velocity * (100 - 2 * s) / 100)
+    return int(velocity * (100 + 2 * s) / 100), velocity
+
+def _pair_stop(pair, *a, **k):
+    left, right = _ports(pair)
+    _sim.motorStop(_L[left])
+    _sim.motorStop(_L[right])
+
+def _pair_for_degrees(pair, degrees, left_v, right_v):
+    if degrees < 0:
+        left_v, right_v = -left_v, -right_v
+    _set_pair(pair, left_v, right_v)
+    async def finish():
+        await _until_turned(list(_ports(pair)), abs(degrees),
+                            _allowed_ms(degrees, max(abs(left_v), abs(right_v))))
+        _pair_stop(pair)
+    return _movement(finish())
+
+def _pair_for_time(pair, duration, left_v, right_v):
+    _set_pair(pair, left_v, right_v)
+    async def finish():
+        await _sim.sleep(duration)
+        _pair_stop(pair)
+    return _movement(finish())
+
+_module("motor_pair", PAIR_1=0, PAIR_2=1, PAIR_3=2, pair=_pair,
+        unpair=lambda pair: _pairs.pop(pair, None),
+        move=lambda pair, steering, velocity=360, **k: _set_pair(pair, *_steer(steering, _speed(velocity))),
+        move_tank=lambda pair, left_velocity, right_velocity, **k: _set_pair(pair, left_velocity, right_velocity),
+        move_for_degrees=lambda pair, degrees, steering, velocity=360, **k:
+            _pair_for_degrees(pair, degrees, *_steer(steering, _speed(velocity))),
+        move_tank_for_degrees=lambda pair, degrees, left_velocity, right_velocity, **k:
+            _pair_for_degrees(pair, degrees, left_velocity, right_velocity),
+        move_for_time=lambda pair, duration, steering, velocity=360, **k:
+            _pair_for_time(pair, duration, *_steer(steering, _speed(velocity))),
+        move_tank_for_time=lambda pair, duration, left_velocity, right_velocity, **k:
+            _pair_for_time(pair, duration, left_velocity, right_velocity),
+        stop=_pair_stop)
+
+
+# ---- Sensors ----
+def _no_sensor(kind, p):
+    # The hub raises an error when nothing is plugged into the port.
+    raise OSError(19, "ENODEV - no " + kind + " sensor on port " + _L[p]
+                  + " (see the simulator's Rover tab)")
+
+def _distance(p):
+    _reading()
+    mm = _sim.distance(_L[p])
+    if mm is None:
+        _no_sensor("distance", p)
+    return int(mm)
+
+def _colour(p):
+    _reading()
+    c = _sim.color(_L[p])
+    if c is None:
+        _no_sensor("colour", p)
+    return int(c)
+
+_REFLECTION = {6: 25, 9: 45, 10: 90}
+_RGBI = {6: (150, 500, 200, 400), 9: (700, 150, 120, 450), 10: (900, 900, 900, 1000)}
+
+_module("distance_sensor", distance=_distance)
+_module("color_sensor", color=_colour,
+        reflection=lambda p: _REFLECTION.get(_colour(p), 50),
+        rgbi=lambda p: _RGBI.get(_colour(p), (500, 500, 500, 600)))
+_module("color", UNKNOWN=-1, BLACK=0, MAGENTA=1, PURPLE=2, BLUE=3, AZURE=4, TURQUOISE=5,
+        GREEN=6, YELLOW=7, ORANGE=8, RED=9, WHITE=10)
+
+# SPIKE parts the simulator does not have: they accept anything and do nothing.
+_module("force_sensor", pressed=lambda p: False, force=lambda p: 0, raw=lambda p: 0)
+for _name in ("color_matrix", "device", "orientation", "app"):
+    _module(_name)
+
+
+async def _sleep_ms(ms):
+    _waited()
+    await _sim.sleep(ms)
+
+async def _until(fn, timeout=0):
+    waited = 0
+    while not fn():
+        _waited()
+        await _sim.sleep(10)
+        waited += 10
+        if timeout and waited >= timeout:
+            return
+
+
+def _finished(task):
+    for t in _moves:
+        t.cancel()
+    _moves.clear()
+    if task.cancelled():
+        _sim.programDone("cancelled")
+        return
+    e = task.exception()
+    _sim.programDone(None if e is None else "".join(traceback.format_exception(e)))
+
+
+def _runloop_run(*coros):
+    async def _all():
+        await asyncio.gather(*coros)
+    t = asyncio.ensure_future(_all())
+    t.add_done_callback(_finished)
+    _tasks.append(t)
+    return t
+
+_module("runloop", sleep_ms=_sleep_ms, run=_runloop_run, until=_until)
+
+_motion = _NS(tilt_angles=lambda: (_reading(), (int(_sim.tiltYaw()), 0, 0))[1],
+              reset_yaw=lambda v=0: _sim.resetYaw(v))
+
+_right_checks = [0]
+def _button_pressed(b):
+    """No real buttons here: the simulator presses RIGHT for you whenever a
+    program waits for it (every other check of RIGHT reports it pressed), so
+    setup_check runs straight through. LEFT is never pressed."""
+    _reading()
+    if b != 2:
+        return 0
+    _right_checks[0] += 1
+    return 100 if _right_checks[0] % 2 == 0 else 0
+
+_module("hub", port=port, motion_sensor=_motion,
+        button=_NS(pressed=_button_pressed, LEFT=1, RIGHT=2),
+        light_matrix=_Noop(), sound=_Noop(), light=_Noop())
+
+_fake_time = types.ModuleType("time")
+_fake_time.__dict__.update(
+    ticks_ms=lambda: int(_sim.now()), ticks_us=lambda: int(_sim.now() * 1000),
+    ticks_diff=lambda a, b: a - b, ticks_add=lambda a, b: a + b,
+    sleep_ms=lambda ms: (_waited(), _sim.advance(ms))[1],
+    sleep=lambda s: (_waited(), _sim.advance(s * 1000))[1],
+    time=lambda: _sim.now() / 1000)
+
+
+def _print(*a, sep=" ", end="\n", **k):
+    _sim.log(sep.join(str(x) for x in a))
+
+builtins.print = _print
+
+
+def _cancel_all():
+    for t in _tasks + _moves:
+        t.cancel()
+    _tasks.clear()
+    _moves.clear()
+    _pairs.clear()
+    _waited()
+
+
+def _instrument(ns):
+    """Read-only hooks for the map overlay: grab the CourseMap object explore()
+    builds, and the square it plans from. Nothing the program sees changes."""
+    M = ns.get("CourseMap")
+    if isinstance(M, type):
+        orig = M.__init__
+        def __init__(self, *a, **k):
+            orig(self, *a, **k)
+            ns["__maze__"] = self
+        M.__init__ = __init__
+    nm = ns.get("next_move")
+    if callable(nm):
+        def next_move(course_map, square, facing, *a, **k):
+            ns["__pos__"] = square
+            result = nm(course_map, square, facing, *a, **k)
+            ns["__target__"] = result[1] if isinstance(result, tuple) else None
+            return result
+        ns["next_move"] = next_move
+
+
+def _start(src, filename):
+    """Run the program file fresh. Returns True if it started a runloop task."""
+    global _ns
+    _cancel_all()
+    _ns = {"__name__": "__main__", "__file__": filename}
+    real_time = sys.modules.get("time")
+    sys.modules["time"] = _fake_time
+    try:
+        exec(compile(src, filename, "exec"), _ns)
+    finally:
+        sys.modules["time"] = real_time
+    _instrument(_ns)
+    return len(_tasks) > 0
+
+
+def _snapshot():
+    out = {"cell": _ns.get("STEP_CM"), "pos": _ns.get("__pos__"), "target": _ns.get("__target__")}
+    m = _ns.get("__maze__")
+    if m is not None:
+        out["visited"] = list(getattr(m, "visited", ()))
+        out["solid"] = list(getattr(m, "solid", ()))
+        out["blocked"] = list(getattr(m, "blocked", ()))
+    return json.dumps(out)
+</script>
+
+<script>
+(() => {
+'use strict';
+
+/* ===================== Sensor and motion model ===================== */
+const PHYS_PARAMS = [
+  ['coneHalf', 12, 'Distance sensor half-cone, deg'],
+  ['maxIncidence', 40, 'Echo is lost beyond this angle off square, deg'],
+  ['sonarRange', 200, 'Distance sensor range, cm'],
+  ['dropoutPct', 0, 'Random missed echoes, %'],
+  ['noiseCm', 0, 'Random noise on readings, ± cm'],
+  ['turnMomentum', 0.08, 'Turn coast after stopping, s'],
+  ['driveMomentum', 0.05, 'Drive coast after stopping, s'],
+  ['timeLimit', 900, 'End the simulation after this many seconds'],
+];
+const P = {};
+const COLOR_GREEN = 6, COLOR_RED = 9, COLOR_WHITE = 10;
+
+/* ===================== Rover description (cm, x right, y forward) ===================== */
+// The presets measure from the middle of the drive wheels. Students can
+// measure from anywhere: deriveRover() works out where the rover turns and
+// moves everything so that point is the origin.
+const ROVER_PRESETS = {
+  example: {
+    name: 'Two drive wheels and a caster',
+    body: [[-7.5, 7.5, -11, 7]],
+    wheels: [{ x: -6.4, y: 0, d: 8.3, port: 'B', forward: -1 }, { x: 6.4, y: 0, d: 8.3, port: 'A', forward: 1 },
+             { x: 0, y: -8.5, d: 2.5, caster: true }],
+    sensors: [{ type: 'distance', port: 'C', x: 0, y: 7 }, { type: 'colour', port: 'D', x: 0, y: -10 }],
+    measured: { turnPointBehindFront: null, quarterTurnWheelDegrees: null },
+  },
+  skid4: {
+    name: 'Four wheels, two motors (skid steer)',
+    body: [[-8.5, 8.5, -11, 9]],
+    wheels: [{ x: -7.2, y: 5, d: 5.6, port: 'B', forward: -1 }, { x: -7.2, y: -5, d: 5.6, port: 'B', forward: -1 },
+             { x: 7.2, y: 5, d: 5.6, port: 'A', forward: 1 }, { x: 7.2, y: -5, d: 5.6, port: 'A', forward: 1 }],
+    sensors: [{ type: 'distance', port: 'C', x: 0, y: 9 }, { type: 'colour', port: 'D', x: 0, y: -10 }],
+    measured: { turnPointBehindFront: null, quarterTurnWheelDegrees: null },
+  },
+  skid6: {
+    name: 'Six wheels, two motors (skid steer)',
+    body: [[-8.5, 8.5, -11, 11]],
+    wheels: [{ x: -7.2, y: 7, d: 5.6, port: 'B', forward: -1 }, { x: -7.2, y: 0, d: 5.6, port: 'B', forward: -1 },
+             { x: -7.2, y: -7, d: 5.6, port: 'B', forward: -1 }, { x: 7.2, y: 7, d: 5.6, port: 'A', forward: 1 },
+             { x: 7.2, y: 0, d: 5.6, port: 'A', forward: 1 }, { x: 7.2, y: -7, d: 5.6, port: 'A', forward: 1 }],
+    sensors: [{ type: 'distance', port: 'C', x: 0, y: 11 }, { type: 'colour', port: 'D', x: 0, y: -10 }],
+    measured: { turnPointBehindFront: null, quarterTurnWheelDegrees: null },
+  },
+  reardrive: {
+    name: 'Rear drive, two free front wheels',
+    body: [[-8.5, 8.5, -8, 14]],
+    wheels: [{ x: -7.2, y: 0, d: 5.6, port: 'B', forward: -1 }, { x: 7.2, y: 0, d: 5.6, port: 'A', forward: 1 },
+             { x: -7.2, y: 10, d: 5.6 }, { x: 7.2, y: 10, d: 5.6 }],
+    sensors: [{ type: 'distance', port: 'C', x: 0, y: 14 }, { type: 'colour', port: 'D', x: 0, y: -8 }],
+    measured: { turnPointBehindFront: null, quarterTurnWheelDegrees: null },
+  },
+};
+const PORTS = ['A', 'B', 'C', 'D', 'E', 'F'];
+const SIDE_GAP = 0.25;     // a wheel closer than this to the middle line is on neither side
+let rover = null;          // the description, as the student wrote it
+let R = null;              // worked out from it by deriveRover()
+
+function validRover(r) {
+  const num = v => typeof v === 'number' && Number.isFinite(v);
+  const rect = b => Array.isArray(b) && b.length === 4 && b.every(num) && b[0] < b[1] && b[2] < b[3];
+  if (!r || typeof r !== 'object') return 'The rover must be a JSON object.';
+  if (!Array.isArray(r.body) || !r.body.length || !r.body.every(rect)) return 'body must be a list of boxes [x0, x1, y0, y1] with x0 < x1 and y0 < y1.';
+  if (!Array.isArray(r.wheels) || !r.wheels.length) return 'wheels must be a list of wheels.';
+  const motorPorts = new Set();
+  for (const [i, w] of r.wheels.entries()) {
+    const name = 'Wheel ' + (i + 1);
+    if (!w || !num(w.x) || !num(w.y) || !num(w.d) || w.d <= 0) return name + ' needs x, y and a diameter d above 0.';
+    if (w.port === undefined || w.port === null) continue;
+    if (w.caster) return name + ' is a caster, so it cannot be driven by a motor.';
+    if (!PORTS.includes(w.port)) return name + ': port must be "A" to "F".';
+    if (w.forward !== 1 && w.forward !== -1) return name + ': forward must be 1 or -1.';
+    if (w.gear !== undefined && (!num(w.gear) || w.gear <= 0)) return name + ': gear must be a number above 0.';
+    if (Math.abs(w.x) < SIDE_GAP) return name + ' is driven but sits on the middle line, so it is on neither side.';
+    motorPorts.add(w.port);
+  }
+  const driven = r.wheels.filter(w => w.port);
+  for (const p of motorPorts) {
+    const sides = new Set(driven.filter(w => w.port === p).map(w => Math.sign(w.x)));
+    if (sides.size > 1) return 'Port ' + p + ' drives wheels on both sides, so the rover could not turn.';
+  }
+  if (!driven.some(w => w.x < 0) || !driven.some(w => w.x > 0))
+    return 'The rover needs a driven wheel on each side to turn on the spot, and the autonomy programs need that.';
+  if (!Array.isArray(r.sensors)) return 'sensors must be a list (it can be empty: []).';
+  const sensorPorts = new Set();
+  for (const [i, s] of r.sensors.entries()) {
+    const name = 'Sensor ' + (i + 1);
+    if (!s || (s.type !== 'distance' && s.type !== 'colour')) return name + ': type must be "distance" or "colour".';
+    if (!PORTS.includes(s.port)) return name + ': port must be "A" to "F".';
+    if (!num(s.x) || !num(s.y)) return name + ' needs x and y.';
+    if (s.angle !== undefined && !num(s.angle)) return name + ': angle must be a number.';
+    if (motorPorts.has(s.port) || sensorPorts.has(s.port)) return 'Port ' + s.port + ' is used twice.';
+    sensorPorts.add(s.port);
+  }
+  const m = r.measured || {};
+  for (const k of ['turnPointBehindFront', 'quarterTurnWheelDegrees'])
+    if (m[k] !== undefined && m[k] !== null && !(num(m[k]) && m[k] > 0)) return 'measured.' + k + ' must be a number above 0, or null.';
+  return '';
+}
+
+// Solve the 3x3 system M t = b (Gaussian elimination). null if singular.
+function solve3(M, b) {
+  const A = M.map((row, i) => [...row, b[i]]);
+  for (let c = 0; c < 3; c++) {
+    let p = c;
+    for (let r = c + 1; r < 3; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    if (Math.abs(A[p][c]) < 1e-12) return null;
+    [A[c], A[p]] = [A[p], A[c]];
+    for (let r = 0; r < 3; r++) {
+      if (r === c) continue;
+      const f = A[r][c] / A[c][c];
+      for (let k = c; k < 4; k++) A[r][k] -= f * A[c][k];
+    }
+  }
+  return [A[0][3] / A[0][0], A[1][3] / A[1][1], A[2][3] / A[2][2]];
+}
+
+// How a rover with wheels that cannot swivel spins on the spot. Each such
+// wheel presses on the floor with the same weight and friction (an
+// assumption). Driven wheels are made to roll at a set speed; free wheels
+// roll freely but resist sliding sideways. Slow LEGO rovers hardly use any
+// force to speed up, so the friction forces must balance - and the motion
+// where they balance is the one that wastes the least energy in sliding.
+// Found by iteratively reweighted least squares.
+// contacts: {x, y, s (rolling speed, driven only), free}. Returns [vx, vy, w].
+function slidingMotion(contacts) {
+  let t = [0, 0, 0];
+  for (let it = 0; it < 500; it++) {
+    const M = [[0, 0, 0], [0, 0, 0], [0, 0, 0]], b = [0, 0, 0];
+    const add = (row, target, wgt) => {
+      for (let i = 0; i < 3; i++) { b[i] += wgt * row[i] * target; for (let j = 0; j < 3; j++) M[i][j] += wgt * row[i] * row[j]; }
+    };
+    for (const c of contacts) {
+      // Sliding of the wheel over the floor: sideways ex, along the wheel ey.
+      const ex = t[0] - t[2] * c.y, ey = c.free ? 0 : t[1] + t[2] * c.x - c.s;
+      const wgt = it === 0 ? 1 : 1 / Math.sqrt(ex * ex + ey * ey + 1e-12);
+      add([1, 0, -c.y], 0, wgt);
+      if (!c.free) add([0, 1, c.x], c.s, wgt);
+    }
+    const next = solve3(M, b);
+    if (!next) return null;
+    const step = Math.abs(next[0] - t[0]) + Math.abs(next[1] - t[1]) + Math.abs(next[2] - t[2]);
+    t = next;
+    if (it > 5 && step < 1e-10) break;
+  }
+  return t;
+}
+
+// From the description: the turning point, the effective track (how far
+// apart wheels would have to be, without any sliding, to turn at the same
+// rate), and everything moved so the turning point is the origin.
+function deriveRover(r) {
+  const fixed = r.wheels.filter(w => !w.caster);
+  const driven = r.wheels.filter(w => w.port);
+  const mm = r.measured || {};
+  // Rolling speed (cm/s) per motor degree per second, + = forward.
+  const rate = w => w.forward / (w.gear || 1) * Math.PI * w.d / 360;
+  const meanAbsRate = list => list.reduce((a, w) => a + Math.abs(rate(w)), 0) / list.length;
+  const left = driven.filter(w => w.x < 0), right = driven.filter(w => w.x > 0);
+  const kL = meanAbsRate(left), kR = meanAbsRate(right);
+  const xs = list => list.reduce((a, w) => a + w.x, 0) / list.length;
+  const geomTrack = xs(right) - xs(left);
+
+  let px, py, track, skid = false;
+  const y0 = fixed[0].y;
+  if (fixed.every(w => Math.abs(w.y - y0) < 0.05)) {
+    // All the wheels that cannot swivel are on one axle: no sliding needed.
+    px = (xs(left) + xs(right)) / 2; py = y0; track = geomTrack;
+  } else {
+    skid = true;
+    const contacts = fixed.map(w => w.port
+      ? { x: w.x, y: w.y, s: (w.x < 0 ? -1 : 1) * Math.abs(rate(w)) / (w.x < 0 ? kL : kR), free: false }
+      : { x: w.x, y: w.y, s: 0, free: true });
+    const t = slidingMotion(contacts);
+    if (t && Math.abs(t[2]) > 1e-9) { px = -t[1] / t[2]; py = t[0] / t[2]; track = 2 / t[2]; }
+    else { px = (xs(left) + xs(right)) / 2; py = fixed.reduce((a, w) => a + w.y, 0) / fixed.length; track = geomTrack; }
+  }
+  const bx0 = Math.min(...r.body.map(b => b[0])), bx1 = Math.max(...r.body.map(b => b[1]));
+  const by0 = Math.min(...r.body.map(b => b[2])), by1 = Math.max(...r.body.map(b => b[3]));
+  let pointHow = 'estimate', trackHow = 'estimate';
+  if (mm.turnPointBehindFront) { px = (bx0 + bx1) / 2; py = by1 - mm.turnPointBehindFront; pointHow = 'measured'; }
+  // In a quarter turn each side rolls a quarter of a circle of diameter
+  // track: track x pi / 4 cm.
+  const motorDegPerCm = 1 / ((kL + kR) / 2);
+  if (mm.quarterTurnWheelDegrees) { track = mm.quarterTurnWheelDegrees / (Math.PI / 4 * motorDegPerCm); trackHow = 'measured'; }
+
+  const sh = b => [b[0] - px, b[1] - px, b[2] - py, b[3] - py];
+  const body = r.body.map(sh);
+  let reach = 0;
+  for (const [a, b, c, d] of body) for (const [x, y] of [[a, c], [a, d], [b, c], [b, d]]) reach = Math.max(reach, Math.hypot(x, y));
+  return {
+    name: r.name || 'My rover', pivot: [px, py], body, reach, skid, pointHow, trackHow, geomTrack, track,
+    front: by1 - py, back: py - by0, width: bx1 - bx0, behindFront: by1 - py,
+    quarterTurnDeg: track * Math.PI / 4 * motorDegPerCm,
+    left: left.map(w => ({ port: w.port, k: rate(w) })), right: right.map(w => ({ port: w.port, k: rate(w) })),
+    drivePorts: new Set(driven.map(w => w.port)),
+    wheels: r.wheels.map(w => ({ x: w.x - px, y: w.y - py, d: w.d, port: w.port || null, caster: !!w.caster })),
+    sensors: r.sensors.map(s => ({ type: s.type, port: s.port, x: s.x - px, y: s.y - py, angle: s.angle || 0 })),
+  };
+}
+
+/* ===================== Course presets (cm, y up) ===================== */
+const PRESETS = {
+  drawing: {
+    walls: [[-169, -149.4, -9.4, 190], [-101, 17, 176.6, 194], [17.6, 36.6, -9, 193.4], [-149.4, -16, -10.4, 8.4],
+            [-26, 17.6, 143, 161.6], [-149.4, -84, 111.4, 132.4], [-60.6, 17.6, 66, 87], [-169, 36.6, 194, 197]],
+    green: [-52, -4.6, 99, 126.4], red: [-149, -101.4, 173.4, 194], start: [0, 0],
+  },
+  arena: {
+    walls: [[-154, -150, -34, 154], [40, 44, -34, 154], [-154, 44, -34, -30], [-154, 44, 150, 154],
+            [-60, -30, 40, 70], [-112, -80, 98, 102], [-112, -108, 60, 102]],
+    green: [-26, -10, 12, 24], red: [-150, -129, 120, 150], start: [0, 0],
+  },
+  empty: {
+    walls: [[-104, -100, -24, 184], [100, 104, -24, 184], [-104, 104, -24, -20], [-104, 104, 180, 184]],
+    green: null, red: [-100, -79, 150, 180], start: [0, 0],
+  },
+};
+
+/* ===================== Helpers ===================== */
+const $ = id => document.getElementById(id);
+const clone = o => JSON.parse(JSON.stringify(o));
+const rad = d => d * Math.PI / 180;
+function wrap(d) { while (d > 180) d -= 360; while (d < -180) d += 360; return d; }
+const n1 = x => String(Math.round(x * 10) / 10);
+const round1 = v => Math.round(v * 10) / 10;
+function store(key, val) { try { localStorage.setItem('rcsl.' + key, JSON.stringify(val)); } catch (e) {} }
+function load(key) { try { const v = localStorage.getItem('rcsl.' + key); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
+let course = clone(PRESETS.drawing);
+
+/* ===================== Simulation state ===================== */
+class Cancelled extends Error {}
+class TimeLimit extends Error {}
+let S = null;
+const ctl = { paused: false, stepMode: false, speed: 5 };
+
+function newSim() {
+  const segs = [];
+  for (const [a, b, c, d] of course.walls) segs.push(['v', a, c, d], ['v', b, c, d], ['h', c, a, b], ['h', d, a, b]);
+  const [sx0, sy0] = course.start;
+  return { x: sx0, y: sy0, h: 0, yawOff: 0, t: 0,
+           vel: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 }, pos: { A: 0, B: 0, C: 0, D: 0, E: 0, F: 0 },
+           path: [[sx0, sy0]], echoes: [], beam: null, log: [], legs: 0, blockedLegs: 0, sweeps: 0,
+           found: [], status: 'running', cancelled: false, timedOut: false, debt: 0, segs, snap: null };
+}
+const tick = ms => new Promise(r => setTimeout(r, ms));
+function advance(me, ms) {
+  let left = ms;
+  while (left > 0) { const dt = Math.min(10, left); physics(me, dt / 1000); me.t += dt; left -= dt; }
+}
+async function sleep(ms) {
+  const me = S;
+  if (!me || me.cancelled) throw new Cancelled('cancelled');
+  advance(me, ms);
+  if (me.t > P.timeLimit * 1000) { me.timedOut = true; throw new TimeLimit('simulation time limit'); }
+  if (ctl.speed === Infinity) { me.debt += ms; if (me.debt >= 250) { me.debt = 0; await tick(0); } }
+  else { me.debt += ms / ctl.speed; if (me.debt >= 16) { const w = me.debt; me.debt = 0; await tick(w); } }
+  while (ctl.paused && !me.cancelled) await tick(40);
+  if (me.cancelled) throw new Cancelled('cancelled');
+}
+
+// A point on the rover (x to its right, y forward of the turning point),
+// on the floor, for a rover at (px, py) facing h.
+function onFloor(px, py, h, x, y) {
+  const r = rad(h);
+  return [px + Math.cos(r) * x - Math.sin(r) * y, py + Math.sin(r) * x + Math.cos(r) * y];
+}
+// The rover's body is one or more boxes. (x, y) is the turning point, h the
+// heading. Walls are axis-aligned boxes; separating-axis test on 4 axes.
+function collides(x, y, h) {
+  const r = rad(h), fx = -Math.sin(r), fy = Math.cos(r), qx = Math.cos(r), qy = Math.sin(r);
+  for (const [b0, b1, b2, b3] of R.body) {
+    const L = (b3 - b2) / 2, Hw = (b1 - b0) / 2, offF = (b3 + b2) / 2, offQ = (b1 + b0) / 2;
+    const cx = x + fx * offF + qx * offQ, cy = y + fy * offF + qy * offQ;
+    const ex = Math.abs(fx) * L + Math.abs(qx) * Hw, ey = Math.abs(fy) * L + Math.abs(qy) * Hw;
+    for (const [a, b, c, d] of course.walls) {
+      if (cx + ex <= a || cx - ex >= b || cy + ey <= c || cy - ey >= d) continue;
+      const mx = (a + b) / 2, my = (c + d) / 2, hx = (b - a) / 2, hy = (d - c) / 2;
+      if (Math.abs((mx - cx) * fx + (my - cy) * fy) >= L + Math.abs(fx) * hx + Math.abs(fy) * hy) continue;
+      if (Math.abs((mx - cx) * qx + (my - cy) * qy) >= Hw + Math.abs(qx) * hx + Math.abs(qy) * hy) continue;
+      return true;
+    }
+  }
+  return false;
+}
+// Forward speed (cm/s) and turn rate (deg/s, + = left) from the motor speeds.
+// Each side rolls at the average speed of its driven wheels; the turn rate
+// uses the effective track, which includes any sliding (see deriveRover).
+function motion(me) {
+  const side = ws => ws.reduce((a, w) => a + (me.vel[w.port] || 0) * w.k, 0) / ws.length;
+  const vL = side(R.left), vR = side(R.right);
+  return [(vR + vL) / 2, (vR - vL) / R.track * 180 / Math.PI];
+}
+function addPath(me) {
+  const last = me.path[me.path.length - 1];
+  if (Math.hypot(me.x - last[0], me.y - last[1]) > 0.8) me.path.push([me.x, me.y]);
+}
+function physics(me, dt) {
+  for (const p of PORTS) if (!R.drivePorts.has(p)) me.pos[p] += me.vel[p] * dt;   // other motors turn freely
+  const [v, w] = motion(me);
+  if (v === 0 && w === 0) return;
+  // Turning on the spot can hit things too: the back of the rover swings round.
+  const nh = wrap(me.h + w * dt), r = rad(nh);
+  const nx = me.x - Math.sin(r) * v * dt, ny = me.y + Math.cos(r) * v * dt;
+  if (collides(nx, ny, nh)) return;      // blocked: the drive motors stall
+  me.x = nx; me.y = ny; me.h = nh;
+  for (const p of R.drivePorts) me.pos[p] += me.vel[p] * dt;
+  addPath(me);
+}
+function castRay(px, py, ang) {
+  const dx = -Math.sin(rad(ang)), dy = Math.cos(rad(ang));
+  let best = null;
+  for (const [kind, k, lo, hi] of S.segs) {
+    let t, hit, inc;
+    if (kind === 'v') { if (Math.abs(dx) < 1e-9) continue; t = (k - px) / dx; hit = py + t * dy; inc = Math.acos(Math.min(1, Math.abs(dx))) * 180 / Math.PI; }
+    else { if (Math.abs(dy) < 1e-9) continue; t = (k - py) / dy; hit = px + t * dx; inc = Math.acos(Math.min(1, Math.abs(dy))) * 180 / Math.PI; }
+    if (t > 0.01 && hit >= lo && hit <= hi && (best === null || t < best[0])) best = [t, inc];
+  }
+  return best;
+}
+const hub = {
+  run(p, v) { S.vel[p] = v; },
+  stop(p) {
+    // The first drive motor to stop, while they all still run, brings the
+    // rover's coasting.
+    if (R.drivePorts.has(p) && [...R.drivePorts].every(q => S.vel[q] !== 0)) {
+      const [v, w] = motion(S);
+      const nh = wrap(S.h + w * P.turnMomentum);
+      if (!collides(S.x, S.y, nh)) S.h = nh;
+      if (v !== 0) {
+        const r = rad(S.h), d = v * P.driveMomentum;
+        const nx = S.x - Math.sin(r) * d, ny = S.y + Math.cos(r) * d;
+        if (!collides(nx, ny, S.h)) { S.x = nx; S.y = ny; addPath(S); }
+      }
+    }
+    S.vel[p] = 0;
+  },
+  relPos(p) { return Math.trunc(S.pos[p] || 0); },
+  resetRelPos(p, v) { S.pos[p] = v; },
+  tiltYaw() { return Math.round(wrap(S.h - S.yawOff) * 10); },
+  resetYaw(v) { S.yawOff = S.h - (v || 0); },
+  distance(port) {
+    const sensor = R.sensors.find(s => s.type === 'distance' && s.port === port);
+    if (!sensor) return null;
+    const [sx, sy] = onFloor(S.x, S.y, S.h, sensor.x, sensor.y);
+    const h = wrap(S.h + sensor.angle), r = rad(h);
+    const n = Math.max(1, Math.ceil(P.coneHalf / 3));
+    let best = null;
+    for (let k = -n; k <= n; k++) {
+      const hit = castRay(sx, sy, h + k * P.coneHalf / n);
+      if (hit && hit[1] <= P.maxIncidence && (best === null || hit[0] < best)) best = hit[0];
+    }
+    if (best !== null && P.dropoutPct > 0 && Math.random() * 100 < P.dropoutPct) best = null;
+    if (best !== null && P.noiseCm > 0) best = Math.max(0.5, best + (Math.random() * 2 - 1) * P.noiseCm);
+    if (best !== null && best > P.sonarRange) best = null;
+    S.beam = { sx, sy, h, d: best, t: S.t };
+    if (best !== null) {
+      S.echoes.push([sx - Math.sin(r) * best, sy + Math.cos(r) * best, S.t]);
+      if (S.echoes.length > 2500) S.echoes.splice(0, 500);
+      return Math.round(best * 10);
+    }
+    return -1;
+  },
+  color(port) {
+    const sensor = R.sensors.find(s => s.type === 'colour' && s.port === port);
+    if (!sensor) return null;
+    const [x, y] = onFloor(S.x, S.y, S.h, sensor.x, sensor.y);
+    const inside = q => q && x >= q[0] && x <= q[1] && y >= q[2] && y <= q[3];
+    if (inside(course.red)) return COLOR_RED;
+    if (inside(course.green)) return COLOR_GREEN;
+    return COLOR_WHITE;
+  },
+};
+
+/* ===================== Log ===================== */
+function kindOf(text) {
+  if (text.startsWith('step:')) return text.includes(' done') ? 'leg' : 'block';
+  if (text.startsWith('drive:') || text.startsWith('turn:')) return 'turn';
+  if (text.startsWith('look:') || text.startsWith('wall check')) return 'radar';
+  if (/^(explore:|follow:|map \||=== (EXPLORER|WALL FOLLOWER|SETUP))/.test(text)) return 'decision';
+  if (text.startsWith('COLOUR')) return 'checkpoint';
+  if (text.startsWith('=== RUN FINISHED')) return 'goal';
+  if (text.startsWith('ERROR') || text.startsWith('WARNING') || text.startsWith('Traceback') || text.includes('PROBLEM')) return 'error';
+  return 'info';
+}
+function log(text, forceKind) {
+  const me = S;
+  if (!me) return;
+  for (const line of String(text).split('\n')) {
+    const entry = { t: me.t, text: line, kind: forceKind || kindOf(line), pose: [me.x, me.y, me.h] };
+    me.log.push(entry);
+    if (line.startsWith('step:')) { me.legs++; if (!line.includes(' done')) me.blockedLegs++; }
+    if (line.startsWith('look:')) me.sweeps++;
+    if (line.startsWith('COLOUR: found ')) me.found.push(line.slice(14).split(',')[0]);
+    appendLog(entry, me.log.length - 1);
+  }
+  if (ctl.stepMode) { ctl.stepMode = false; ctl.paused = true; syncControls(); }
+}
+let selected = -1;
+function clearLog() { $('logList').innerHTML = ''; $('logEmpty').hidden = false; }
+function appendLog(entry, idx) {
+  $('logEmpty').hidden = true;
+  const li = document.createElement('li');
+  li.className = 'k-' + entry.kind; li.dataset.i = idx;
+  const t = document.createElement('span'); t.className = 't'; t.textContent = (entry.t / 1000).toFixed(1);
+  const k = document.createElement('span'); k.className = 'k';
+  const x = document.createElement('span'); x.className = 'x'; x.textContent = entry.text;
+  li.append(t, k, x);
+  const list = $('logList');
+  list.appendChild(li);
+  if (list.children.length > 5000) list.removeChild(list.firstChild);
+  if ($('follow').checked) { const box = $('log'); box.scrollTop = box.scrollHeight; }
+}
+$('logList').addEventListener('click', e => {
+  const li = e.target.closest('li'); if (!li) return;
+  document.querySelectorAll('#logList li.sel').forEach(n => n.classList.remove('sel'));
+  const i = +li.dataset.i;
+  if (i === selected) { selected = -1; return; }
+  selected = i; li.classList.add('sel'); $('follow').checked = false;
+});
+$('showTurns').addEventListener('change', e => $('log').classList.toggle('hide-turns', !e.target.checked));
+
+/* ===================== Python bridge ===================== */
+let pyodide = null, pyFn = null;   // pyFn: the bootstrap's functions, looked up once
+window.simBridge = {
+  motorRun: (p, v) => hub.run(p, Number(v)),
+  motorStop: p => hub.stop(p),
+  relPos: p => hub.relPos(p),
+  resetRelPos: (p, v) => hub.resetRelPos(p, Number(v)),
+  motorVel: p => (S && S.vel[p]) || 0,
+  setDrivePorts: (l, r) => {
+    if (R.left.some(w => w.port === l) && R.right.some(w => w.port === r)) return;
+    log('WARNING: (simulator) motor_pair.pair uses port ' + l + ' as left and port ' + r + ' as right, but the rover in the Rover tab ' +
+        'drives its left wheels from port ' + [...new Set(R.left.map(w => w.port))].join('/') +
+        ' and its right wheels from port ' + [...new Set(R.right.map(w => w.port))].join('/'), 'error');
+  },
+  distance: p => hub.distance(String(p)),
+  color: p => hub.color(String(p)),
+  tiltYaw: () => hub.tiltYaw(),
+  resetYaw: v => hub.resetYaw(Number(v) || 0),
+  sleep: ms => sleep(Number(ms)),
+  advance: ms => { if (S) advance(S, Number(ms)); },
+  now: () => (S ? S.t : 0),
+  log: text => log(text),
+  programDone: err => onProgramDone(err == null ? null : String(err)),
+};
+async function initPython() {
+  try {
+    pyodide = await loadPyodide({ indexURL: 'https://cdn.jsdelivr.net/pyodide/v0.26.4/full/' });
+    await pyodide.runPythonAsync($('bootstrap').textContent);
+    pyFn = { start: pyodide.globals.get('_start'), cancel: pyodide.globals.get('_cancel_all'), snapshot: pyodide.globals.get('_snapshot') };
+    setStatusChip('Ready', '');
+    $('btnRun').disabled = false; $('btnStep').disabled = false;
+    await reloadSource(true).catch(() => {});
+    if (location.hash.startsWith('#autorun')) {   // rover_sim.html#autorun starts a Max-speed run straight away
+      ctl.speed = Infinity; $('speed').value = 'max';
+      startRun(false);
+    }
+  } catch (e) {
+    setStatusChip('Python failed', 's-error');
+    setSrcMsg('Could not load Python in the browser (it needs internet the first time): ' + e.message, 'bad');
+  }
+}
+function onProgramDone(err) {
+  const me = S;
+  if (!me || me.cancelled || err === 'cancelled') return;
+  if (me.timedOut) { me.status = 'timeout'; log('ERROR: simulation time limit of ' + P.timeLimit + ' s reached', 'error'); }
+  else if (err) { me.status = 'error'; log(err.trimEnd(), 'error'); }
+  else me.status = 'goal';     // the program ended by itself
+  for (const p of 'ABCDEF') S.vel[p] = 0;
+  ctl.paused = false; ctl.stepMode = false;
+  takeSnapshot();
+  syncControls();
+}
+function takeSnapshot() {
+  if (!pyFn || !S) return;
+  try { S.snap = JSON.parse(pyFn.snapshot()); } catch (e) { /* program not loaded yet */ }
+}
+
+/* ===================== Source file ===================== */
+let fileHandle = null, pickedFile = null, lastSrc = null;
+function setSrcMsg(t, k) { const m = $('srcMsg'); m.textContent = t; m.className = 'msg ' + (k || ''); }
+async function readSource() {
+  if (fileHandle) {
+    const f = await fileHandle.getFile();
+    return { text: await f.text(), name: f.name, when: f.lastModified };
+  }
+  if (pickedFile) return { text: await pickedFile.text(), name: pickedFile.name, when: pickedFile.lastModified };
+  const path = $('srcPath').value.trim();
+  const res = await fetch(path, { cache: 'no-store' });
+  if (!res.ok) throw new Error('Could not read ' + path + ' (HTTP ' + res.status + ').');
+  const lm = res.headers.get('Last-Modified');
+  return { text: await res.text(), name: path.split('/').pop(), when: lm ? Date.parse(lm) : null };
+}
+async function reloadSource(quiet) {
+  try {
+    lastSrc = await readSource();
+    $('srcName').textContent = lastSrc.name;
+    const lines = lastSrc.text.split('\n').length;
+    $('srcInfo').textContent = lastSrc.name + ' · ' + lines + ' lines' + (lastSrc.when ? ' · saved ' + new Date(lastSrc.when).toLocaleTimeString() : '');
+    refreshFromSource(lastSrc.text);
+    if (!quiet) setSrcMsg('Reloaded.', 'ok'); else setSrcMsg('', '');
+    return lastSrc;
+  } catch (e) {
+    const fileMode = location.protocol === 'file:';
+    setSrcMsg(e.message + (fileMode ? ' Pages opened from disk cannot read files by path: start it with python sim/serve_sim.py, or choose the file.' : ''), 'bad');
+    throw e;
+  }
+}
+$('btnReload').addEventListener('click', () => reloadSource(false).catch(() => {}));
+$('btnPick').addEventListener('click', async () => {
+  try {
+    if (window.showOpenFilePicker) {
+      [fileHandle] = await window.showOpenFilePicker({ types: [{ description: 'Python', accept: { 'text/x-python': ['.py'] } }] });
+      pickedFile = null;
+    } else {
+      const inp = document.createElement('input'); inp.type = 'file'; inp.accept = '.py';
+      await new Promise(res => { inp.onchange = res; inp.click(); });
+      if (!inp.files[0]) return;
+      pickedFile = inp.files[0]; fileHandle = null;
+    }
+    await reloadSource(false);
+  } catch (e) { if (e.name !== 'AbortError') setSrcMsg(e.message, 'bad'); }
+});
+$('srcPath').addEventListener('change', () => { fileHandle = null; pickedFile = null; store('srcPath', $('srcPath').value); reloadSource(false).catch(() => {}); });
+
+/* constants and program entries found in the file */
+const CONST_RE = /^([A-Z][A-Z0-9_]*)[ \t]*=[ \t]*(True|False|-?\d+(?:\.\d+)?)\b/;
+let overrides = load('overrides') || {};
+function parseConstants(src) {
+  // Only the SETTINGS and FINE TUNING blocks, when the file has them: the
+  // names above them (like NORTH) and the numbers inside the code are not
+  // meant to be changed.
+  const all = src.split('\n');
+  let lines = [];
+  all.forEach((l, at) => {
+    if (!/^# (SETTINGS|FINE TUNING)\b/.test(l)) return;
+    const rest = all.slice(at + 2);
+    const end = rest.findIndex(r => /^# ={10,}/.test(r));
+    lines = lines.concat(end >= 0 ? rest.slice(0, end) : rest);
+  });
+  if (!lines.length) lines = all;
+  const out = [];
+  lines.forEach(line => { const m = CONST_RE.exec(line); if (m) out.push({ name: m[1], value: m[2] }); });
+  return out;
+}
+function parseEntries(src) {
+  const names = new Set();
+  for (const m of src.matchAll(/^#?\s*runloop\.run\((?:run_program\()?(\w+)/gm)) names.add(m[1]);
+  return [...names];
+}
+function refreshFromSource(src) {
+  // program list
+  const sel = $('entry'), keep = sel.value || load('entry') || '';
+  sel.innerHTML = '<option value="">As in the file</option>';
+  for (const n of parseEntries(src)) { const o = document.createElement('option'); o.value = n; o.textContent = n + '()'; sel.appendChild(o); }
+  if ([...sel.options].some(o => o.value === keep)) sel.value = keep;
+  // constants
+  const host = $('constParams');
+  host.innerHTML = '';
+  for (const c of parseConstants(src)) {
+    const row = document.createElement('div'); row.className = 'prow'; row.dataset.name = c.name;
+    const id = 'c-' + c.name;
+    const lab = document.createElement('label'); lab.htmlFor = id; lab.textContent = c.name;
+    let inp;
+    if (c.value === 'True' || c.value === 'False') {
+      inp = document.createElement('select');
+      for (const v of ['True', 'False']) { const o = document.createElement('option'); o.value = v; o.textContent = v; inp.appendChild(o); }
+    } else { inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; }
+    inp.id = id;
+    inp.value = c.name in overrides ? overrides[c.name] : c.value;
+    const mark = () => row.classList.toggle('changed', String(inp.value) !== String(c.value) && inp.value !== '');
+    inp.addEventListener('change', () => {
+      if (inp.value === '' || String(inp.value) === String(c.value)) delete overrides[c.name];
+      else overrides[c.name] = String(inp.value);
+      store('overrides', overrides); mark(); renderProgramCheck();
+    });
+    mark();
+    row.append(lab, inp);
+    host.appendChild(row);
+  }
+  applyFilter();
+  renderProgramCheck();
+}
+function applyFilter() {
+  const q = $('paramFilter').value.trim().toUpperCase();
+  document.querySelectorAll('#constParams .prow').forEach(r => { r.hidden = q && !r.dataset.name.includes(q); });
+}
+$('paramFilter').addEventListener('input', applyFilter);
+function buildRunSource(src) {
+  let out = src;
+  for (const [name, val] of Object.entries(overrides)) {
+    const re = new RegExp('^(' + name + '[ \\t]*=[ \\t]*)(True|False|-?\\d+(?:\\.\\d+)?)\\b', 'm');
+    out = out.replace(re, (m, a) => a + val);
+  }
+  const entry = $('entry').value;
+  if (entry) {
+    out = out.replace(/^runloop\.run\(.*$/gm, '# (simulator) $&');
+    out += '\n' + (/^async def run_program\(/m.test(out) ? 'runloop.run(run_program(' + entry + '))' : 'runloop.run(' + entry + '())') + '\n';
+  }
+  return out;
+}
+
+/* ===================== Run lifecycle ===================== */
+async function startRun(stepFirst) {
+  if (!pyFn) return;
+  stopRun();
+  let src;
+  try { src = await reloadSource(true); } catch (e) { return; }
+  readPhys(); clearLog();
+  S = newSim();
+  const me = S;
+  ctl.paused = false; ctl.stepMode = !!stepFirst; selected = -1;
+  syncControls();
+  for (const [name, have, want, kind] of settingMismatches() || [])
+    log('WARNING: (simulator) your program has ' + name + ' = ' + settingText(have, kind) + ', but the rover in the Rover tab has ' +
+        settingText(want, kind) + '. The simulator drives the Rover tab\'s rover.', 'error');
+  try {
+    const started = pyFn.start(buildRunSource(src.text), src.name);
+    if (!started) { me.status = 'stopped'; log('ERROR: the file never calls runloop.run(...), so nothing ran.', 'error'); syncControls(); }
+  } catch (e) {
+    me.status = 'error';
+    log(String(e.message || e).trimEnd(), 'error');
+    syncControls();
+  }
+}
+function stopRun() {
+  if (S) S.cancelled = true;
+  if (pyFn) { try { pyFn.cancel(); } catch (e) {} }
+}
+function resetRun() { stopRun(); S = null; ctl.paused = false; ctl.stepMode = false; clearLog(); syncControls(); }
+const isActive = () => S && S.status === 'running';
+function setStatusChip(text, cls) { const st = $('hudStatus'); st.textContent = text; st.className = 'chip status ' + cls; }
+function syncControls() {
+  const active = isActive();
+  $('btnRun').textContent = active ? 'Restart' : (S ? 'Run again' : 'Run');
+  $('btnPause').disabled = !active;
+  $('btnPause').textContent = ctl.paused ? 'Resume' : 'Pause';
+  if (!pyodide) return;
+  const label = { running: ctl.paused ? 'Paused' : 'Running', goal: 'Finished', stopped: 'Stopped', error: 'Error', timeout: 'Time limit' };
+  if (S) setStatusChip(label[S.status], 's-' + (S.status === 'running' && ctl.paused ? 'paused' : S.status));
+  else setStatusChip('Ready', '');
+  document.querySelectorAll('.tools button').forEach(b => { b.disabled = active && b.dataset.tool !== 'none'; });
+}
+
+/* ===================== Parameters: rover model ===================== */
+function buildPhys() {
+  const saved = load('phys') || {};
+  const host = $('physParams'); host.innerHTML = '';
+  for (const [key, def, help, options] of PHYS_PARAMS) {
+    const row = document.createElement('div'); row.className = 'prow';
+    const lab = document.createElement('label'); lab.htmlFor = 'p-' + key; lab.textContent = key;
+    let inp;
+    if (options) {
+      inp = document.createElement('select');
+      for (const o of options) { const op = document.createElement('option'); op.value = String(o); op.textContent = String(o); inp.appendChild(op); }
+    } else { inp = document.createElement('input'); inp.type = 'number'; inp.step = 'any'; }
+    inp.id = 'p-' + key;
+    inp.dataset.key = key; inp.dataset.def = def; inp.value = key in saved ? saved[key] : def;
+    const h = document.createElement('div'); h.className = 'help'; h.textContent = help;
+    const mark = () => row.classList.toggle('changed', String(inp.value) !== String(def));
+    inp.addEventListener(options ? 'change' : 'input', () => {
+      mark();
+      const o = {}; host.querySelectorAll('input, select').forEach(i => { if (i.value !== '' && String(i.value) !== String(i.dataset.def)) o[i.dataset.key] = i.value; });
+      store('phys', o);
+      if (!isActive()) readPhys();
+    });
+    mark(); row.append(lab, inp, h); host.appendChild(row);
+  }
+}
+function readPhys() {
+  document.querySelectorAll('#physParams input, #physParams select').forEach(i => {
+    const key = i.dataset.key;
+    const v = Number(i.value); P[key] = i.value !== '' && Number.isFinite(v) ? v : Number(i.dataset.def);
+  });
+}
+$('btnParamReset').addEventListener('click', () => {
+  overrides = {}; store('overrides', overrides); store('phys', {});
+  buildPhys(); readPhys();
+  if (lastSrc) refreshFromSource(lastSrc.text);
+});
+
+/* ===================== Course panel ===================== */
+function courseChanged() {
+  store('course', course);
+  $('courseJson').value = formatCourse(course);
+  if (S && !isActive()) { S = null; clearLog(); syncControls(); }
+}
+function formatCourse(c) {
+  const walls = c.walls.map(w => '    ' + JSON.stringify(w.map(round1))).join(',\n');
+  return '{\n  "walls": [\n' + walls + '\n  ],\n  "green": ' + JSON.stringify(c.green && c.green.map(round1)) +
+    ',\n  "red": ' + JSON.stringify(c.red && c.red.map(round1)) + ',\n  "start": ' + JSON.stringify(c.start.map(round1)) + '\n}';
+}
+function validCourse(c) {
+  const rect = r => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite) && r[0] < r[1] && r[2] < r[3];
+  if (!c || !Array.isArray(c.walls) || !c.walls.every(rect)) return 'Each wall must be [x0, x1, y0, y1] with x0 < x1 and y0 < y1.';
+  if (c.green !== null && !rect(c.green)) return 'Green must be [x0, x1, y0, y1] or null.';
+  if (c.red !== null && !rect(c.red)) return 'Red must be [x0, x1, y0, y1] or null.';
+  if (!Array.isArray(c.start) || c.start.length !== 2 || !c.start.every(Number.isFinite)) return 'Start must be [x, y].';
+  return '';
+}
+function setMsg(text, kind) { const m = $('jsonMsg'); m.textContent = text; m.className = 'msg ' + kind; }
+$('btnPreset').addEventListener('click', () => { if (isActive()) resetRun(); course = clone(PRESETS[$('preset').value]); courseChanged(); fitView(); setMsg('Loaded the preset.', 'ok'); });
+$('btnClearWalls').addEventListener('click', () => { if (isActive()) resetRun(); course.walls = []; courseChanged(); setMsg('Removed all walls.', 'ok'); });
+$('btnApplyJson').addEventListener('click', () => {
+  let c;
+  try { c = JSON.parse($('courseJson').value); } catch (e) { setMsg('That is not valid JSON: ' + e.message, 'bad'); return; }
+  if (!('green' in c)) c.green = null;
+  if (!('red' in c)) c.red = null;
+  const err = validCourse(c);
+  if (err) { setMsg(err, 'bad'); return; }
+  if (isActive()) resetRun();
+  course = { walls: c.walls, green: c.green, red: c.red, start: c.start };
+  courseChanged(); fitView(); setMsg('Applied the course.', 'ok');
+});
+$('btnCopyJson').addEventListener('click', () => {
+  const ta = $('courseJson');
+  const fallback = () => { ta.focus(); ta.select(); setMsg('Selected the JSON. Press Ctrl+C to copy it.', 'ok'); };
+  try { navigator.clipboard.writeText(ta.value).then(() => setMsg('Copied the course JSON.', 'ok'), fallback); } catch (e) { fallback(); }
+});
+
+/* ===================== Rover panel ===================== */
+function formatRover(r) {
+  const one = o => JSON.stringify(o).replace(/,"/g, ', "').replace(/":/g, '": ').replace(/,(?=[-\d])/g, ', ');
+  const list = (key, items) => '  "' + key + '": ' + (items.length ? '[\n' + items.map(i => '    ' + one(i)).join(',\n') + '\n  ]' : '[]');
+  return '{\n  "name": ' + JSON.stringify(r.name || 'My rover') + ',\n' + list('body', r.body) + ',\n' + list('wheels', r.wheels) +
+    ',\n' + list('sensors', r.sensors) + ',\n  "measured": ' + one(r.measured || {}) + '\n}';
+}
+function setRoverMsg(text, kind) { const m = $('roverMsg'); m.textContent = text; m.className = 'msg ' + kind; }
+function renderRoverSummary() {
+  const host = $('roverSummary'); host.innerHTML = '';
+  const line = (text, cls) => { const d = document.createElement('div'); d.textContent = text; if (cls) d.className = cls; host.appendChild(d); return d; };
+  const b = document.createElement('b'); b.textContent = R.name; host.appendChild(b);
+  const how = h => h === 'measured' ? ' (measured)' : ' (estimate)';
+  line('Turns about a point ' + n1(R.behindFront) + ' cm behind the front' + how(R.pointHow) +
+       '. Turning on the spot needs a clear circle ' + n1(2 * R.reach) + ' cm across.');
+  line('A quarter turn takes about ' + Math.round(R.quarterTurnDeg) + ' motor degrees' + how(R.trackHow) +
+       (R.skid && R.trackHow !== 'measured' ? ': its wheels slide, so it turns like wheels ' + n1(R.track) + ' cm apart, not ' + n1(R.geomTrack) + ' cm.' : '.'));
+  const ports = list => [...new Set(list.map(w => w.port))].join(' + ');
+  const sensors = R.sensors.map(s => s.type + ' port ' + s.port).join(', ');
+  line('Left wheels: port ' + ports(R.left) + '. Right wheels: port ' + ports(R.right) + '. ' + (sensors ? 'Sensors: ' + sensors + '.' : 'No sensors.'));
+  if (R.skid && (R.pointHow !== 'measured' || R.trackHow !== 'measured'))
+    line('Its wheels slide sideways when it turns. The estimate assumes the same weight on every wheel; fill in "Match my real rover" to make the simulator turn like your rover.', 'warn');
+}
+function roverChanged() {
+  R = deriveRover(rover);
+  store('rover', rover);
+  $('roverJson').value = formatRover(rover);
+  const m = rover.measured || {};
+  $('mTurnPoint').value = m.turnPointBehindFront || '';
+  $('mQuarter').value = m.quarterTurnWheelDegrees || '';
+  $('roverName').value = rover.name || '';
+  renderRoverSummary();
+  renderProgramCheck();
+  if (S && !isActive()) { S = null; clearLog(); syncControls(); }
+}
+// fromEditor: the editor made this change, so its draft is already right.
+// Anything else (a preset, JSON, a measurement) replaces the editor's draft.
+function setRover(r, fromEditor) {
+  const err = validRover(r);
+  if (err) { setRoverMsg(err, 'bad'); return false; }
+  if (isActive()) resetRun();
+  rover = r; roverChanged();
+  if (!fromEditor) { draft = clone(rover); selectedPart = null; fitEditor(); renderProps(); drawEditor(); }
+  return true;
+}
+$('btnRoverPreset').addEventListener('click', () => { if (setRover(clone(ROVER_PRESETS[$('roverPreset').value]))) setRoverMsg('Loaded the preset.', 'ok'); });
+$('btnApplyRover').addEventListener('click', () => {
+  let r;
+  try { r = JSON.parse($('roverJson').value); } catch (e) { setRoverMsg('That is not valid JSON: ' + e.message, 'bad'); return; }
+  if (r && typeof r === 'object' && !r.sensors) r.sensors = [];
+  if (setRover(r)) setRoverMsg('Applied the rover.', 'ok');
+});
+$('btnCopyRover').addEventListener('click', () => {
+  const ta = $('roverJson');
+  const fallback = () => { ta.focus(); ta.select(); setRoverMsg('Selected the JSON. Press Ctrl+C to copy it.', 'ok'); };
+  try { navigator.clipboard.writeText(ta.value).then(() => setRoverMsg('Copied the rover JSON.', 'ok'), fallback); } catch (e) { fallback(); }
+});
+for (const [id, key] of [['mTurnPoint', 'turnPointBehindFront'], ['mQuarter', 'quarterTurnWheelDegrees']]) {
+  $(id).addEventListener('change', () => {
+    const v = Number($(id).value), r = clone(rover);
+    r.measured = Object.assign({}, r.measured, { [key]: $(id).value !== '' && v > 0 ? v : null });
+    if (setRover(r)) setRoverMsg($(id).value === '' ? 'Using the estimate.' : 'Using your measurement.', 'ok');
+  });
+}
+
+/* ===================== Your program and this rover ===================== */
+// The settings a program needs for the rover in the Rover tab, measured
+// from its turning point. [name, value, kind, tolerance]
+function roverSettings() {
+  const driven = rover.wheels.filter(w => w.port);
+  const left = driven.filter(w => w.x < 0), right = driven.filter(w => w.x > 0);
+  const out = [];
+  out.push(['LEFT_MOTOR_PORT', left[0].port, 'port'], ['RIGHT_MOTOR_PORT', right[0].port, 'port']);
+  out.push(['LEFT_MOTOR_DIRECTION', left[0].forward, 'num', 0], ['RIGHT_MOTOR_DIRECTION', right[0].forward, 'num', 0]);
+  const ds = R.sensors.find(s => s.type === 'distance'), cs = R.sensors.find(s => s.type === 'colour');
+  if (ds) out.push(['DISTANCE_SENSOR_PORT', ds.port, 'port']);
+  if (cs) out.push(['COLOUR_SENSOR_PORT', cs.port, 'port']);
+  out.push(['WHEEL_DIAMETER_CM', round1(driven.reduce((a, w) => a + w.d, 0) / driven.length), 'num', 0.15]);
+  out.push(['WHEEL_GEAR_RATIO', round1(driven.reduce((a, w) => a + (w.gear || 1), 0) / driven.length), 'num', 0.01]);
+  out.push(['ROVER_WIDTH_CM', round1(R.width), 'num', 0.5], ['ROVER_FRONT_CM', round1(R.front), 'num', 0.5], ['ROVER_BACK_CM', round1(R.back), 'num', 0.5]);
+  if (ds) out.push(['DISTANCE_SENSOR_POSITION_CM', round1(ds.y), 'num', 0.5]);
+  if (cs) out.push(['COLOUR_SENSOR_POSITION_CM', round1(cs.y), 'num', 0.5]);
+  return out;
+}
+// Things about the rover the program cannot handle, whatever its settings say.
+function roverNotes() {
+  const notes = [];
+  const sidePorts = side => [...new Set(rover.wheels.filter(w => w.port && Math.sign(w.x) === side).map(w => w.port))];
+  if (sidePorts(-1).length > 1 || sidePorts(1).length > 1)
+    notes.push('More than one motor drives a side, but the program only drives LEFT_MOTOR_PORT and RIGHT_MOTOR_PORT. The User Manual shows how to add a second motor on each side.');
+  const rolls = new Set(rover.wheels.filter(w => w.port).map(w => round1(w.d / (w.gear || 1))));
+  if (rolls.size > 1)
+    notes.push('The driven wheels are not all the same size (after gearing), so they roll at different speeds, fight each other and slip. The program has only one WHEEL_DIAMETER_CM; the one shown is their average.');
+  const ds = R.sensors.filter(s => s.type === 'distance'), cs = R.sensors.filter(s => s.type === 'colour');
+  if (ds.length > 1 || cs.length > 1) notes.push('The program uses only one sensor of each kind: the first one listed.');
+  if (ds.length && ds[0].angle) notes.push('The distance sensor points sideways, but the autonomy programs expect it to point straight ahead.');
+  if (ds.length && Math.abs(ds[0].x) > 2) notes.push('The distance sensor is ' + n1(Math.abs(ds[0].x)) + ' cm off the middle line, so near corners it can see past (or into) things the middle of the rover meets.');
+  if (!ds.length) notes.push('There is no distance sensor, so the autonomy programs cannot see walls.');
+  if (!cs.length) notes.push('There is no colour sensor, so nothing will find colours.');
+  return notes;
+}
+function programSetting(src, name) {
+  const m = new RegExp('^' + name + '[ \\t]*=[ \\t]*(port\\.([A-F])|-?\\d+(?:\\.\\d+)?)', 'm').exec(src);
+  if (!m) return undefined;
+  return m[2] !== undefined ? m[2] : Number(m[1]);
+}
+// Settings in the program that do not match the Rover tab's rover.
+function settingMismatches() {
+  if (!lastSrc || !rover) return null;
+  const src = buildRunSource(lastSrc.text), out = [];
+  for (const [name, want, kind, tol] of roverSettings()) {
+    const have = programSetting(src, name);
+    if (have === undefined) continue;          // a team file without that setting
+    if (kind === 'port' ? have !== want : Math.abs(have - want) > tol + 1e-9) out.push([name, have, want, kind]);
+  }
+  return out;
+}
+const settingText = (v, kind) => kind === 'port' ? 'port.' + v : String(v);
+function renderProgramCheck() {
+  const host = $('roverCheck'); host.innerHTML = '';
+  const line = (text, cls) => { const d = document.createElement('div'); d.textContent = text; if (cls) d.className = cls; host.appendChild(d); };
+  const bad = settingMismatches();
+  $('hudSettings').hidden = !(bad && bad.length);
+  if (bad === null) line('Loads with the file.');
+  else if (!bad.length) line('The settings in ' + lastSrc.name + ' match this rover.', 'good');
+  else {
+    line('These settings in ' + lastSrc.name + ' do not match this rover. The simulator drives the rover drawn here, so fix whichever one is wrong:', 'bad');
+    for (const [name, have, want, kind] of bad) line(name + ' is ' + settingText(have, kind) + ' in the program, ' + settingText(want, kind) + ' here.', 'bad');
+  }
+  for (const n of roverNotes()) line(n, 'warn');
+}
+$('btnCopySettings').addEventListener('click', () => {
+  const text = ['# Settings for "' + (rover.name || 'My rover') + '", from the simulator\'s Rover tab.',
+                '# Paste them over the same lines in the SETTINGS part of your program.']
+    .concat(roverSettings().map(([name, v, kind]) => name + ' = ' + settingText(v, kind))).join('\n');
+  let out = $('settingsOut');
+  if (!out) {
+    out = document.createElement('textarea'); out.id = 'settingsOut'; out.readOnly = true; out.style.minHeight = '230px';
+    $('btnCopySettings').parentNode.after(out);
+  }
+  out.value = text;
+  const fallback = () => { out.focus(); out.select(); setRoverMsg('Selected the settings. Press Ctrl+C to copy them.', 'ok'); };
+  try { navigator.clipboard.writeText(text).then(() => setRoverMsg('Copied the settings. Paste them into your program.', 'ok'), fallback); } catch (e) { fallback(); }
+});
+
+/* ===================== Rover editor ===================== */
+// Edits a draft copy of the rover. Whenever the draft is a valid rover it
+// becomes the simulated rover; until then the message says what is missing.
+let draft = null, selectedPart = null, rtool = 'select', rdrag = null;
+const WHEEL_W = 2;                         // drawn width of a wheel, cm
+const rcv = $('rcv'), rctx = rcv.getContext('2d');
+const ev = { k: 10, cx: 0, cy: 0, w: 0, h: 0, dpr: 1 };     // px per cm, and the rover point in the middle
+const ex = x => ev.w / 2 + (x - ev.cx) * ev.k;
+const ey = y => ev.h / 2 - (y - ev.cy) * ev.k;
+const toRover = (px, py) => [ev.cx + (px - ev.w / 2) / ev.k, ev.cy - (py - ev.h / 2) / ev.k];
+const half = v => Math.round(v * 2) / 2;   // snap to 0.5 cm
+const partOf = p => p.kind === 'body' ? draft.body[p.i] : p.kind === 'wheel' ? draft.wheels[p.i] : draft.sensors[p.i];
+
+function fitEditor() {
+  if (!ev.w || !draft) return;
+  let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+  const add = (x, y) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); };
+  for (const b of draft.body) { add(b[0], b[2]); add(b[1], b[3]); }
+  for (const w of draft.wheels) { add(w.x, w.y - w.d / 2); add(w.x, w.y + w.d / 2); }
+  for (const s of draft.sensors) add(s.x, s.y);
+  ev.k = Math.min(ev.w / (Math.max(x1 - x0, 16) + 10), ev.h / (Math.max(y1 - y0, 16) + 10));
+  ev.cx = (x0 + x1) / 2; ev.cy = (y0 + y1) / 2;
+}
+function sizeEditor() {
+  const dpr = window.devicePixelRatio || 1, w = rcv.clientWidth, h = rcv.clientHeight;
+  if (!w || !h) return;
+  const first = !ev.w;
+  rcv.width = Math.round(w * dpr); rcv.height = Math.round(h * dpr);
+  Object.assign(ev, { w, h, dpr });
+  if (first) fitEditor();
+  drawEditor();
+}
+new ResizeObserver(sizeEditor).observe(rcv);
+
+function drawEditor() {
+  if (!ev.w || !draft) return;
+  const c = rctx, k = ev.k;
+  c.setTransform(ev.dpr, 0, 0, ev.dpr, 0, 0);
+  c.fillStyle = colors.floor; c.fillRect(0, 0, ev.w, ev.h);
+  const [vx0, vy1] = toRover(0, 0), [vx1, vy0] = toRover(ev.w, ev.h);
+  for (const [step, col] of [[1, colors.grid], [5, colors['grid-major']]]) {
+    if (step * k < 5) continue;
+    c.strokeStyle = col; c.lineWidth = 1; c.beginPath();
+    for (let x = Math.ceil(vx0 / step) * step; x <= vx1; x += step) { c.moveTo(ex(x), 0); c.lineTo(ex(x), ev.h); }
+    for (let y = Math.ceil(vy0 / step) * step; y <= vy1; y += step) { c.moveTo(0, ey(y)); c.lineTo(ev.w, ey(y)); }
+    c.stroke();
+  }
+  c.beginPath();
+  for (const b of draft.body) c.rect(ex(b[0]), ey(b[3]), (b[1] - b[0]) * k, (b[3] - b[2]) * k);
+  c.fillStyle = colors.raised; c.fill(); c.strokeStyle = colors.ink; c.lineWidth = 1.5; c.stroke();
+  c.font = '600 11px "IBM Plex Mono", monospace'; c.textAlign = 'center'; c.textBaseline = 'middle';
+  for (const w of draft.wheels) {
+    c.fillStyle = w.port ? colors.ink : colors.muted;
+    if (w.caster) { c.beginPath(); c.arc(ex(w.x), ey(w.y), w.d / 2 * k, 0, Math.PI * 2); c.fill(); continue; }
+    c.fillRect(ex(w.x - WHEEL_W / 2), ey(w.y + w.d / 2), WHEEL_W * k, w.d * k);
+    if (w.port) { c.fillStyle = colors.raised; c.fillText(w.port, ex(w.x), ey(w.y)); }
+  }
+  for (const s of draft.sensors) {
+    const col = s.type === 'distance' ? colors.sonar : colors.accent;
+    if (s.type === 'distance') {
+      const a = rad(s.angle || 0);
+      c.strokeStyle = col; c.lineWidth = 2; c.beginPath(); c.moveTo(ex(s.x), ey(s.y));
+      c.lineTo(ex(s.x - Math.sin(a) * 4), ey(s.y + Math.cos(a) * 4)); c.stroke();
+    }
+    c.fillStyle = col; c.beginPath(); c.arc(ex(s.x), ey(s.y), 9, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#FFFFFF'; c.fillText(s.port, ex(s.x), ey(s.y) + 0.5);
+  }
+  if (selectedPart && partOf(selectedPart)) {
+    const p = partOf(selectedPart);
+    c.strokeStyle = colors.accent; c.lineWidth = 2; c.setLineDash([4, 3]); c.beginPath();
+    if (selectedPart.kind === 'body') c.rect(ex(p[0]), ey(p[3]), (p[1] - p[0]) * k, (p[3] - p[2]) * k);
+    else if (selectedPart.kind === 'wheel' && !p.caster) c.rect(ex(p.x - WHEEL_W / 2) - 3, ey(p.y + p.d / 2) - 3, WHEEL_W * k + 6, p.d * k + 6);
+    else c.arc(ex(p.x), ey(p.y), (selectedPart.kind === 'wheel' ? p.d / 2 * k : 9) + 4, 0, Math.PI * 2);
+    c.stroke(); c.setLineDash([]);
+    if (selectedPart.kind === 'body') {
+      c.fillStyle = colors.accent;
+      for (const [x, y] of [[p[0], p[2]], [p[0], p[3]], [p[1], p[2]], [p[1], p[3]]]) c.fillRect(ex(x) - 4, ey(y) - 4, 8, 8);
+    }
+  }
+  if (rdrag && rdrag.mode === 'box') {
+    const [x0, x1, y0, y1] = boxOf(rdrag);
+    c.strokeStyle = colors.ink; c.lineWidth = 1.5; c.setLineDash([5, 4]); c.strokeRect(ex(x0), ey(y1), (x1 - x0) * k, (y1 - y0) * k); c.setLineDash([]);
+  }
+  // The turning point, when the draft is the rover being simulated.
+  if (!validRover(draft)) {
+    const [px, py] = R.pivot;
+    c.strokeStyle = colors.red; c.lineWidth = 2; c.beginPath();
+    c.moveTo(ex(px) - 7, ey(py)); c.lineTo(ex(px) + 7, ey(py)); c.moveTo(ex(px), ey(py) - 7); c.lineTo(ex(px), ey(py) + 7); c.stroke();
+    c.fillStyle = colors.red; c.textAlign = 'center'; c.fillText('turns here', ex(px), ey(py) + 16);
+  }
+  c.fillStyle = colors.muted; c.textAlign = 'center'; c.font = '700 12px "Barlow Condensed", sans-serif';
+  c.fillText('FRONT', ev.w / 2, 10); c.fillText('BACK', ev.w / 2, ev.h - 9);
+}
+function boxOf(d) { return [Math.min(d.a[0], d.b[0]), Math.max(d.a[0], d.b[0]), Math.min(d.a[1], d.b[1]), Math.max(d.a[1], d.b[1])]; }
+
+function hitPart(x, y) {
+  const tol = 6 / ev.k;
+  for (let i = draft.sensors.length - 1; i >= 0; i--) { const s = draft.sensors[i]; if (Math.hypot(x - s.x, y - s.y) < 9 / ev.k + tol / 2) return { kind: 'sensor', i }; }
+  for (let i = draft.wheels.length - 1; i >= 0; i--) {
+    const w = draft.wheels[i];
+    if (w.caster ? Math.hypot(x - w.x, y - w.y) < w.d / 2 + tol : Math.abs(x - w.x) < WHEEL_W / 2 + tol && Math.abs(y - w.y) < w.d / 2 + tol) return { kind: 'wheel', i };
+  }
+  for (let i = draft.body.length - 1; i >= 0; i--) { const b = draft.body[i]; if (x >= b[0] && x <= b[1] && y >= b[2] && y <= b[3]) return { kind: 'body', i }; }
+  return null;
+}
+function usedPorts() { return new Set([...draft.wheels.map(w => w.port), ...draft.sensors.map(s => s.port)].filter(Boolean)); }
+function freePort(prefer) {
+  const used = usedPorts();
+  return [prefer, ...PORTS].find(p => p && !used.has(p)) || prefer;
+}
+// A drive wheel on a side shares that side's motor if it has one already.
+function sidePort(x) {
+  const w = draft.wheels.find(o => o.port && Math.sign(o.x) === Math.sign(x));
+  return w ? w.port : freePort(x < 0 ? 'B' : 'A');
+}
+function commitDraft() {
+  const err = validRover(draft);
+  if (err) setRoverMsg('Not used yet: ' + err, 'bad');
+  else { setRover(clone(draft), true); setRoverMsg('', ''); }
+  drawEditor();
+}
+function selectPart(p) { selectedPart = p; renderProps(); drawEditor(); }
+function setRtool(t) {
+  rtool = t;
+  document.querySelectorAll('.rtools button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.rtool === t)));
+  rcv.style.cursor = t === 'select' ? 'default' : 'crosshair';
+}
+document.querySelectorAll('.rtools button').forEach(b => b.addEventListener('click', () => setRtool(b.dataset.rtool)));
+$('roverName').addEventListener('change', () => { draft.name = $('roverName').value.trim() || 'My rover'; commitDraft(); });
+function deletePart() {
+  if (!selectedPart) return;
+  const list = selectedPart.kind === 'body' ? draft.body : selectedPart.kind === 'wheel' ? draft.wheels : draft.sensors;
+  list.splice(selectedPart.i, 1);
+  selectPart(null); commitDraft();
+}
+function mirrorWheel() {
+  const w = partOf(selectedPart), m = Object.assign({}, w, { x: -w.x });
+  if (w.port) {
+    const other = draft.wheels.find(o => o.port && Math.sign(o.x) === -Math.sign(w.x));
+    m.port = other ? other.port : freePort(w.x < 0 ? 'A' : 'B');
+    m.forward = other ? other.forward : -w.forward;
+  }
+  draft.wheels.push(m);
+  selectPart({ kind: 'wheel', i: draft.wheels.length - 1 }); commitDraft();
+}
+
+rcv.addEventListener('pointerdown', e => {
+  const r = rcv.getBoundingClientRect(), px = e.clientX - r.left, py = e.clientY - r.top, [x, y] = toRover(px, py);
+  try { rcv.setPointerCapture(e.pointerId); } catch (err) { /* e.g. a synthetic event */ }
+  if (rtool === 'box') { rdrag = { mode: 'box', a: [half(x), half(y)], b: [half(x), half(y)] }; return; }
+  if (rtool !== 'select') {
+    const sx = half(x), sy = half(y);
+    if (rtool === 'wheel') draft.wheels.push({ x: sx, y: sy, d: 5.6, port: sidePort(sx), forward: sx < 0 ? -1 : 1 });
+    if (rtool === 'caster') draft.wheels.push({ x: sx, y: sy, d: 2.5, caster: true });
+    if (rtool === 'distance' || rtool === 'colour')
+      draft.sensors.push({ type: rtool, port: freePort(rtool === 'distance' ? 'C' : 'D'), x: sx, y: sy });
+    selectPart(rtool === 'distance' || rtool === 'colour' ? { kind: 'sensor', i: draft.sensors.length - 1 } : { kind: 'wheel', i: draft.wheels.length - 1 });
+    setRtool('select'); commitDraft();
+    return;
+  }
+  // Select: a corner of the selected box resizes it; anything else selects and moves.
+  if (selectedPart && selectedPart.kind === 'body') {
+    const b = partOf(selectedPart);
+    for (const [cx, cy] of [[0, 2], [0, 3], [1, 2], [1, 3]])
+      if (Math.abs(ex(b[cx]) - px) < 7 && Math.abs(ey(b[cy]) - py) < 7) { rdrag = { mode: 'resize', cx, cy }; return; }
+  }
+  const hit = hitPart(x, y);
+  selectPart(hit);
+  if (hit) rdrag = { mode: 'move', start: [x, y], orig: clone(partOf(hit)), moved: false };
+});
+rcv.addEventListener('pointermove', e => {
+  const r = rcv.getBoundingClientRect(), [x, y] = toRover(e.clientX - r.left, e.clientY - r.top);
+  $('rhint').textContent = 'x ' + n1(x) + ' cm (+ is right) · y ' + n1(y) + ' cm (+ is forward)';
+  if (!rdrag) return;
+  if (rdrag.mode === 'box') rdrag.b = [half(x), half(y)];
+  else if (rdrag.mode === 'resize') {
+    const b = partOf(selectedPart);
+    b[rdrag.cx] = half(x); b[rdrag.cy] = half(y);
+  } else {
+    const dx = half(x - rdrag.start[0]), dy = half(y - rdrag.start[1]), p = partOf(selectedPart), o = rdrag.orig;
+    if (dx || dy) rdrag.moved = true;
+    if (selectedPart.kind === 'body') { p[0] = o[0] + dx; p[1] = o[1] + dx; p[2] = o[2] + dy; p[3] = o[3] + dy; }
+    else { p.x = o.x + dx; p.y = o.y + dy; }
+  }
+  drawEditor();
+});
+rcv.addEventListener('pointerup', () => {
+  if (!rdrag) return;
+  const d = rdrag; rdrag = null;
+  if (d.mode === 'box') {
+    const b = boxOf(d);
+    if (b[1] - b[0] >= 1 && b[3] - b[2] >= 1) { draft.body.push(b); selectPart({ kind: 'body', i: draft.body.length - 1 }); setRtool('select'); commitDraft(); }
+    else drawEditor();
+    return;
+  }
+  if (d.mode === 'resize') {
+    // Dragging a corner past the opposite one flips the box; put it right.
+    const b = partOf(selectedPart), [x0, x1, y0, y1] = [Math.min(b[0], b[1]), Math.max(b[0], b[1]), Math.min(b[2], b[3]), Math.max(b[2], b[3])];
+    b[0] = x0; b[1] = x1; b[2] = y0; b[3] = y1;
+  }
+  if (d.mode === 'resize' || d.moved) { renderProps(); commitDraft(); }
+});
+document.addEventListener('keydown', e => {
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedPart && !$('tab-rover').hidden && !e.target.closest('input, textarea, select')) {
+    deletePart(); e.preventDefault();
+  }
+});
+
+function renderProps() {
+  const host = $('roverProps'); host.innerHTML = '';
+  if (!selectedPart || !partOf(selectedPart)) return;
+  const kind = selectedPart.kind, p = partOf(selectedPart);
+  const add = (el, full) => { if (full) el.classList.add('full'); host.appendChild(el); return el; };
+  const title = document.createElement('b'); title.style.fontFamily = 'var(--font-display)'; title.style.fontSize = '15px';
+  const field = (label, value, set, options) => {
+    const f = document.createElement('label'); f.className = 'field';
+    const s = document.createElement('span'); s.textContent = label;
+    let inp;
+    if (options) {
+      inp = document.createElement('select');
+      for (const [v, t] of options) { const o = document.createElement('option'); o.value = String(v); o.textContent = t; inp.appendChild(o); }
+    } else { inp = document.createElement('input'); inp.type = 'number'; inp.step = '0.1'; }
+    inp.value = String(value);
+    inp.addEventListener('change', () => {
+      const v = options ? inp.value : Number(inp.value);
+      if (!options && (inp.value === '' || !Number.isFinite(v))) return;
+      set(v); commitDraft(); renderProps();
+    });
+    f.append(s, inp); return add(f);
+  };
+  const portOptions = PORTS.map(q => [q, 'port ' + q]);
+  if (kind === 'body') {
+    title.textContent = 'Body box ' + (selectedPart.i + 1) + ' (cm)'; add(title, true);
+    field('Left edge', p[0], v => { p[0] = v; }); field('Right edge', p[1], v => { p[1] = v; });
+    field('Back edge', p[2], v => { p[2] = v; }); field('Front edge', p[3], v => { p[3] = v; });
+  } else if (kind === 'wheel') {
+    title.textContent = 'Wheel ' + (selectedPart.i + 1) + ' (cm)'; add(title, true);
+    const type = p.caster ? 'caster' : p.port ? 'driven' : 'free';
+    field('Kind', type, v => {
+      delete p.caster; delete p.port; delete p.forward; delete p.gear;
+      if (v === 'caster') p.caster = true;
+      if (v === 'driven') { p.port = sidePort(p.x); p.forward = p.x < 0 ? -1 : 1; }
+    }, [['driven', 'driven by a motor'], ['free', 'free (rolls, cannot swivel)'], ['caster', 'caster or ball (swivels)']]);
+    field('Diameter', p.d, v => { p.d = v; });
+    field('x (+ is right)', p.x, v => { p.x = v; }); field('y (+ is forward)', p.y, v => { p.y = v; });
+    if (p.port) {
+      field('Motor port', p.port, v => { p.port = v; }, portOptions);
+      field('Forward is', p.forward, v => { p.forward = Number(v); }, [[1, '+ speed (1)'], [-1, '- speed (-1)']]);
+      field('Gear (motor turns per wheel turn)', p.gear || 1, v => { if (v === 1) delete p.gear; else p.gear = v; });
+    }
+  } else {
+    title.textContent = (p.type === 'distance' ? 'Distance' : 'Colour') + ' sensor (cm)'; add(title, true);
+    field('Port', p.port, v => { p.port = v; }, portOptions);
+    if (p.type === 'distance') field('Angle (+ is left)', p.angle || 0, v => { if (v) p.angle = v; else delete p.angle; });
+    field('x (+ is right)', p.x, v => { p.x = v; }); field('y (+ is forward)', p.y, v => { p.y = v; });
+  }
+  const row = document.createElement('div'); row.className = 'btnrow';
+  if (kind === 'wheel') { const m = document.createElement('button'); m.type = 'button'; m.textContent = 'Copy to the other side'; m.addEventListener('click', mirrorWheel); row.appendChild(m); }
+  const del = document.createElement('button'); del.type = 'button'; del.textContent = 'Delete'; del.addEventListener('click', deletePart); row.appendChild(del);
+  add(row, true);
+}
+
+/* ===================== Canvas ===================== */
+const cv = $('cv'), ctx = cv.getContext('2d');
+let view = { k: 1, ox: 0, oy: 0, minX: 0, maxY: 0, dpr: 1, w: 0, h: 0, ready: false };
+const colors = {};
+function readColors() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const n of ['floor', 'off-floor', 'grid', 'grid-major', 'wall', 'wall-edge', 'path', 'sonar', 'green', 'red', 'ink', 'muted', 'raised', 'accent', 'k-decision', 'k-block'])
+    colors[n] = cs.getPropertyValue('--' + n).trim();
+}
+readColors();
+try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors); } catch (e) {}
+function courseBounds() {
+  let x0 = course.start[0] - 20, x1 = course.start[0] + 20, y0 = course.start[1] - 20, y1 = course.start[1] + 20;
+  const add = r => { if (!r) return; x0 = Math.min(x0, r[0]); x1 = Math.max(x1, r[1]); y0 = Math.min(y0, r[2]); y1 = Math.max(y1, r[3]); };
+  course.walls.forEach(add); add(course.green); add(course.red);
+  return [x0 - 14, x1 + 14, y0 - 14, y1 + 14];
+}
+/* The floor is 10 m by 10 m, centred on (0, 0). The view can zoom out to
+   show all of it, and never moves off it. Editing the course leaves the
+   view alone; loading a course or pressing Fit course fits it. */
+const FLOOR = 500;           // half the floor size, cm
+const K_MAX = 25;            // most zoomed in, px per cm
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+const kMin = () => Math.min(view.w, view.h) / (2 * FLOOR + 40);
+function setView(cx, cy, k) {        // centre the view on (cx, cy) cm at k px per cm
+  if (!view.w || !view.h) return;
+  k = clamp(k, kMin(), K_MAX);
+  cx = clamp(cx, -FLOOR, FLOOR); cy = clamp(cy, -FLOOR, FLOOR);
+  Object.assign(view, { k, ox: 0, oy: 0, minX: cx - view.w / 2 / k, maxY: cy + view.h / 2 / k, ready: true });
+}
+const viewCentre = () => [view.minX + view.w / 2 / view.k, view.maxY - view.h / 2 / view.k];
+function sizeCanvas() {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return;
+  const keep = view.ready ? viewCentre() : null;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  Object.assign(view, { dpr, w, h });
+  if (keep) setView(keep[0], keep[1], view.k); else fitView();
+}
+function fitView() {                 // fit the course, showing at least 2.5 m
+  if (!view.w || !view.h) return;
+  const [x0, x1, y0, y1] = courseBounds();
+  setView((x0 + x1) / 2, (y0 + y1) / 2, Math.min(view.w / Math.max(x1 - x0, 250), view.h / Math.max(y1 - y0, 250)));
+}
+function zoomAt(px, py, factor) {    // zoom, keeping the point under (px, py) still
+  const [wx, wy] = toWorld(px, py);
+  const k = clamp(view.k * factor, kMin(), K_MAX);
+  setView(wx + (view.w / 2 - px) / k, wy - (view.h / 2 - py) / k, k);
+}
+new ResizeObserver(sizeCanvas).observe($('stage'));
+cv.addEventListener('wheel', e => {
+  e.preventDefault();
+  const r = cv.getBoundingClientRect(), dy = e.deltaY * (e.deltaMode === 1 ? 33 : 1);
+  zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-dy * 0.0015));
+}, { passive: false });
+$('btnZoomIn').addEventListener('click', () => zoomAt(view.w / 2, view.h / 2, 1.5));
+$('btnZoomOut').addEventListener('click', () => zoomAt(view.w / 2, view.h / 2, 1 / 1.5));
+$('btnFit').addEventListener('click', fitView);
+$('btnFloor').addEventListener('click', () => setView(0, 0, 0));
+const sx = x => view.ox + (x - view.minX) * view.k;
+const sy = y => view.oy + (view.maxY - y) * view.k;
+const toWorld = (px, py) => [view.minX + (px - view.ox) / view.k, view.maxY - (py - view.oy) / view.k];
+const rectPath = r => ctx.rect(sx(r[0]), sy(r[3]), (r[1] - r[0]) * view.k, (r[3] - r[2]) * view.k);
+
+function drawFloor() {
+  ctx.fillStyle = colors['off-floor']; ctx.fillRect(0, 0, view.w, view.h);
+  ctx.fillStyle = colors.floor; ctx.fillRect(sx(-FLOOR), sy(FLOOR), 2 * FLOOR * view.k, 2 * FLOOR * view.k);
+}
+function drawGrid() {
+  // Only the part of the floor in view; skip grid lines too dense to read.
+  const [vx0, vy1] = toWorld(0, 0), [vx1, vy0] = toWorld(view.w, view.h);
+  const x0 = Math.max(vx0, -FLOOR), x1 = Math.min(vx1, FLOOR), y0 = Math.max(vy0, -FLOOR), y1 = Math.min(vy1, FLOOR);
+  if (x0 >= x1 || y0 >= y1) return;
+  for (const [step, col] of [[10, colors.grid], [50, colors['grid-major']], [100, colors['grid-major']]]) {
+    if (step * view.k < 7) continue;
+    ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.beginPath();
+    for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) { ctx.moveTo(sx(x), sy(y0)); ctx.lineTo(sx(x), sy(y1)); }
+    for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) { ctx.moveTo(sx(x0), sy(y)); ctx.lineTo(sx(x1), sy(y)); }
+    ctx.stroke();
+  }
+}
+function drawScale() {
+  let cm = 10;
+  for (const c of [10, 20, 50, 100, 200, 500]) if (c * view.k <= 160) cm = c;
+  const bx = 14, by = cv.clientHeight - 16, len = cm * view.k;
+  ctx.strokeStyle = colors.ink; ctx.lineWidth = 2; ctx.beginPath();
+  ctx.moveTo(bx, by); ctx.lineTo(bx + len, by); ctx.moveTo(bx, by - 4); ctx.lineTo(bx, by + 4); ctx.moveTo(bx + len, by - 4); ctx.lineTo(bx + len, by + 4);
+  ctx.stroke();
+  ctx.fillStyle = colors.ink; ctx.font = '600 12px "IBM Plex Mono", monospace'; ctx.fillText(cm >= 100 ? cm / 100 + ' m' : cm + ' cm', bx + len + 6, by + 4);
+}
+function drawPatch(r, col, label) {
+  if (!r) return;
+  ctx.globalAlpha = 0.82; ctx.fillStyle = col; ctx.beginPath(); rectPath(r); ctx.fill(); ctx.globalAlpha = 1;
+  ctx.fillStyle = '#FFFFFF'; ctx.font = '700 12px "Barlow Condensed", sans-serif';
+  if ((r[1] - r[0]) * view.k > 46) ctx.fillText(label, sx(r[0]) + 5, sy(r[3]) + 14);
+}
+function drawCourse() {
+  drawPatch(course.green, colors.green, 'GREEN');
+  drawPatch(course.red, colors.red, 'RED');
+  ctx.fillStyle = colors.wall; ctx.strokeStyle = colors['wall-edge']; ctx.lineWidth = 1.5;
+  for (const w of course.walls) { ctx.beginPath(); rectPath(w); ctx.fill(); ctx.stroke(); }
+  const [x, y] = course.start, s = Math.max(6, R.width / 2 * view.k);
+  ctx.strokeStyle = colors.muted; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.arc(sx(x), sy(y), s, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  ctx.beginPath(); ctx.moveTo(sx(x), sy(y) - s - 6); ctx.lineTo(sx(x) - 5, sy(y) - s + 2); ctx.lineTo(sx(x) + 5, sy(y) - s + 2); ctx.closePath();
+  ctx.fillStyle = colors.muted; ctx.fill();
+  ctx.font = '700 12px "Barlow Condensed", sans-serif'; ctx.fillText('START', sx(x) + s + 4, sy(y) + 4);
+}
+function drawMap() {
+  if (!S || !S.snap || !S.snap.cell || !S.snap.visited || !$('showMap').checked) return;
+  const sn = S.snap, k = sn.cell, [ox, oy] = course.start, kk = k * view.k;
+  const centre = c => [ox + c[0] * k, oy + c[1] * k];
+  ctx.fillStyle = colors.accent; ctx.globalAlpha = 0.13;
+  for (const c of sn.visited) { const [x, y] = centre(c); ctx.fillRect(sx(x - k / 2) + 1, sy(y + k / 2) + 1, kk - 2, kk - 2); }
+  ctx.globalAlpha = 0.7; ctx.strokeStyle = colors['k-block']; ctx.lineWidth = 1.5; ctx.beginPath();
+  for (const c of sn.solid) {
+    const [x, y] = centre(c), a = sx(x - k * 0.3), b = sx(x + k * 0.3), t = sy(y + k * 0.3), d = sy(y - k * 0.3);
+    ctx.moveTo(a, t); ctx.lineTo(b, d); ctx.moveTo(b, t); ctx.lineTo(a, d);
+  }
+  ctx.stroke();
+  ctx.lineWidth = 3; ctx.globalAlpha = 0.9; ctx.beginPath();
+  const stepOf = yaw => yaw === 0 ? [0, 1] : yaw === 90 ? [-1, 0] : (yaw === 180 || yaw === -180) ? [0, -1] : [1, 0];
+  for (const [c, yaw] of sn.blocked) {
+    const dir = stepOf(yaw), [x, y] = centre(c);
+    const mx = x + dir[0] * k * 0.45, my = y + dir[1] * k * 0.45, px = -dir[1] * k * 0.35, py = dir[0] * k * 0.35;
+    ctx.moveTo(sx(mx - px), sy(my - py)); ctx.lineTo(sx(mx + px), sy(my + py));
+  }
+  ctx.stroke(); ctx.globalAlpha = 1;
+  if (sn.target) {
+    const [x, y] = centre(sn.target);
+    ctx.strokeStyle = colors.red; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(sx(x), sy(y), kk * 0.38, 0, Math.PI * 2); ctx.stroke();
+  }
+  if (sn.pos) {
+    const [x, y] = centre(sn.pos);
+    ctx.strokeStyle = colors.accent; ctx.lineWidth = 2; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.arc(sx(x), sy(y), kk * 0.3, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]);
+  }
+}
+function drawRover(x, y, h, ghost) {
+  // Drawn around the turning point, front pointing up before rotation.
+  // Canvas y points down, so a point (rx, ry) on the rover is at (rx, -ry).
+  const k = view.k, Fr = R.front * k;
+  ctx.save(); ctx.translate(sx(x), sy(y)); ctx.rotate(-rad(h));
+  ctx.beginPath();
+  for (const [a, b, c, d] of R.body) ctx.rect(a * k, -d * k, (b - a) * k, (d - c) * k);
+  if (ghost) { ctx.setLineDash([4, 3]); ctx.strokeStyle = colors['k-decision']; ctx.lineWidth = 2; ctx.stroke(); ctx.setLineDash([]); }
+  else { ctx.fillStyle = colors.raised; ctx.fill(); ctx.strokeStyle = colors.ink; ctx.lineWidth = 2; ctx.stroke(); }
+  ctx.beginPath(); ctx.moveTo(0, -Fr - 5); ctx.lineTo(-5, -Fr + 3); ctx.lineTo(5, -Fr + 3); ctx.closePath();
+  ctx.fillStyle = ghost ? colors['k-decision'] : colors.ink; ctx.fill();
+  if (!ghost) {
+    for (const w of R.wheels) {
+      ctx.fillStyle = w.port ? colors.ink : colors.muted;
+      if (w.caster) { ctx.beginPath(); ctx.arc(w.x * k, -w.y * k, Math.max(2, w.d / 2 * k), 0, Math.PI * 2); ctx.fill(); }
+      else ctx.fillRect(w.x * k - 1.5, (-w.y - w.d / 2) * k, 3, w.d * k);
+    }
+    for (const s of R.sensors) {
+      if (s.type === 'distance') {
+        ctx.fillStyle = colors.sonar; ctx.beginPath(); ctx.arc(s.x * k, -s.y * k, 3, 0, Math.PI * 2); ctx.fill();
+        if (s.angle) {
+          const a = rad(s.angle);
+          ctx.strokeStyle = colors.sonar; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(s.x * k, -s.y * k);
+          ctx.lineTo(s.x * k - Math.sin(a) * 8, -s.y * k - Math.cos(a) * 8); ctx.stroke();
+        }
+      } else { ctx.strokeStyle = colors.accent; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(s.x * k, -s.y * k, 3.5, 0, Math.PI * 2); ctx.stroke(); }
+    }
+    ctx.strokeStyle = colors.ink; ctx.lineWidth = 1; ctx.beginPath();     // the turning point
+    ctx.moveTo(-4, 0); ctx.lineTo(4, 0); ctx.moveTo(0, -4); ctx.lineTo(0, 4); ctx.stroke();
+  }
+  ctx.restore();
+}
+function drawBeam(b) {
+  if (!b || S.t - b.t > 400) return;
+  const len = (b.d === null ? P.sonarRange : b.d) * view.k;
+  ctx.save(); ctx.translate(sx(b.sx), sy(b.sy)); ctx.rotate(-rad(b.h));
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.arc(0, 0, len, -Math.PI / 2 - rad(P.coneHalf), -Math.PI / 2 + rad(P.coneHalf)); ctx.closePath();
+  ctx.fillStyle = colors.sonar; ctx.globalAlpha = b.d === null ? 0.06 : 0.16; ctx.fill(); ctx.globalAlpha = 1;
+  if (b.d !== null) { ctx.strokeStyle = colors.sonar; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -len); ctx.stroke(); }
+  ctx.restore();
+}
+let snapAt = 0, hudAt = 0;
+function draw() {
+  ctx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  drawFloor();
+  drawGrid();
+  drawCourse();
+  const now = performance.now();
+  if (S && isActive() && now - snapAt > 200) { snapAt = now; takeSnapshot(); }
+  drawMap();
+  if (S) {
+    if ($('showEchoes').checked) {
+      ctx.fillStyle = colors.sonar;
+      for (const [x, y, t] of S.echoes) { ctx.globalAlpha = Math.max(0.12, 0.85 - (S.t - t) / 40000); ctx.fillRect(sx(x) - 1.5, sy(y) - 1.5, 3, 3); }
+      ctx.globalAlpha = 1;
+    }
+    if ($('showPath').checked && S.path.length > 1) {
+      ctx.strokeStyle = colors.path; ctx.lineWidth = 2.5; ctx.lineJoin = 'round'; ctx.beginPath();
+      ctx.moveTo(sx(S.path[0][0]), sy(S.path[0][1]));
+      for (const [x, y] of S.path) ctx.lineTo(sx(x), sy(y));
+      ctx.lineTo(sx(S.x), sy(S.y)); ctx.stroke();
+    }
+    drawBeam(S.beam);
+    if (selected >= 0 && S.log[selected]) { const [x, y, h] = S.log[selected].pose; drawRover(x, y, h, true); }
+    drawRover(S.x, S.y, S.h, false);
+  } else drawRover(course.start[0], course.start[1], 0, false);
+  if (drag) {
+    const r = dragRect();
+    ctx.setLineDash([5, 4]); ctx.strokeStyle = colors.ink; ctx.lineWidth = 1.5; ctx.beginPath(); rectPath(r); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = colors.ink; ctx.font = '12px "IBM Plex Mono", monospace';
+    ctx.fillText(n1(r[1] - r[0]) + ' × ' + n1(r[3] - r[2]) + ' cm', sx(r[1]) + 6, sy(r[2]));
+  }
+  drawScale();
+  if (now - hudAt > 120) {
+    hudAt = now;
+    $('hudTime').textContent = 't ' + (S ? (S.t / 1000).toFixed(1) : '0.0') + ' s';
+    $('hudLegs').textContent = 'steps ' + (S ? S.legs + (S.blockedLegs ? ' (' + S.blockedLegs + ' blocked)' : '') : 0);
+    $('hudSweeps').textContent = 'looks ' + (S ? S.sweeps : 0);
+    $('hudGreen').textContent = 'colours: ' + (S && S.found.length ? S.found.join(', ') : 'none yet');
+  }
+  requestAnimationFrame(draw);
+}
+
+/* ===================== Course editing ===================== */
+let tool = 'none', drag = null;
+document.querySelectorAll('.tools button').forEach(b => b.addEventListener('click', () => {
+  tool = b.dataset.tool;
+  document.querySelectorAll('.tools button').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+  cv.style.cursor = tool === 'none' ? 'grab' : 'crosshair';
+}));
+cv.style.cursor = 'grab';
+let pan = null;
+const snapv = v => $('snap').checked ? Math.round(v / 5) * 5 : round1(v);
+function eventWorld(e) {
+  const r = cv.getBoundingClientRect(), [x, y] = toWorld(e.clientX - r.left, e.clientY - r.top);
+  return [clamp(x, -FLOOR, FLOOR), clamp(y, -FLOOR, FLOOR)];
+}
+function dragRect() { const [ax, ay] = drag.a, [bx, by] = drag.b; return [Math.min(ax, bx), Math.max(ax, bx), Math.min(ay, by), Math.max(ay, by)]; }
+cv.addEventListener('pointerdown', e => {
+  if (tool === 'none' || e.button === 1) {
+    e.preventDefault();
+    pan = { x: e.clientX, y: e.clientY };
+    cv.setPointerCapture(e.pointerId); cv.style.cursor = 'grabbing';
+    return;
+  }
+  if (isActive()) { $('hint').textContent = 'Press Reset to edit the course while a run is going.'; return; }
+  const [x, y] = eventWorld(e);
+  if (tool === 'start') { course.start = [snapv(x), snapv(y)]; courseChanged(); return; }
+  if (tool === 'erase') {
+    const inside = r => r && x >= r[0] && x <= r[1] && y >= r[2] && y <= r[3];
+    for (let i = course.walls.length - 1; i >= 0; i--) if (inside(course.walls[i])) { course.walls.splice(i, 1); courseChanged(); return; }
+    if (inside(course.green)) { course.green = null; courseChanged(); return; }
+    if (inside(course.red)) { course.red = null; courseChanged(); }
+    return;
+  }
+  drag = { a: [snapv(x), snapv(y)], b: [snapv(x), snapv(y)] };
+  cv.setPointerCapture(e.pointerId);
+});
+cv.addEventListener('pointermove', e => {
+  if (pan) {
+    const [cx, cy] = viewCentre();
+    setView(cx - (e.clientX - pan.x) / view.k, cy + (e.clientY - pan.y) / view.k, view.k);
+    pan = { x: e.clientX, y: e.clientY };
+    return;
+  }
+  const [x, y] = eventWorld(e);
+  if (drag) drag.b = [snapv(x), snapv(y)];
+  $('hint').textContent = 'x ' + n1(x) + ' cm · y ' + n1(y) + ' cm' + (tool === 'none' ? '' : ' · tool: ' + tool);
+});
+cv.addEventListener('pointerup', () => {
+  if (pan) { pan = null; cv.style.cursor = tool === 'none' ? 'grab' : 'crosshair'; return; }
+  if (!drag) return;
+  const r = dragRect(); drag = null;
+  if (r[1] - r[0] < 1 || r[3] - r[2] < 1) return;
+  if (tool === 'wall') course.walls.push(r);
+  if (tool === 'green') course.green = r;
+  if (tool === 'red') course.red = r;
+  courseChanged();
+});
+
+/* ===================== Controls ===================== */
+$('btnRun').addEventListener('click', () => startRun(false));
+$('btnPause').addEventListener('click', () => { if (!isActive()) return; ctl.paused = !ctl.paused; syncControls(); });
+$('btnStep').addEventListener('click', () => {
+  if (!isActive()) { startRun(true); return; }
+  ctl.stepMode = true; ctl.paused = false; syncControls();
+});
+$('btnReset').addEventListener('click', resetRun);
+$('speed').addEventListener('change', e => { ctl.speed = e.target.value === 'max' ? Infinity : Number(e.target.value); store('speed', e.target.value); });
+$('entry').addEventListener('change', e => store('entry', e.target.value));
+document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('.tabs button').forEach(x => x.setAttribute('aria-selected', String(x === b)));
+  document.querySelectorAll('.tabpane').forEach(p => { p.hidden = p.id !== b.getAttribute('aria-controls'); });
+  store('tab', b.id);
+}));
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, select') || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.key === 'r' || e.key === 'R') { if (pyodide) startRun(false); e.preventDefault(); }
+  else if (e.key === ' ') { if (isActive()) { ctl.paused = !ctl.paused; syncControls(); } e.preventDefault(); }
+  else if (e.key === 'n' || e.key === 'N') { if (pyodide) $('btnStep').click(); e.preventDefault(); }
+});
+
+/* ===================== Boot ===================== */
+const savedCourse = load('course');
+if (savedCourse && !validCourse(savedCourse)) course = savedCourse;
+const savedRover = load('rover');
+rover = savedRover && !validRover(savedRover) ? savedRover : clone(ROVER_PRESETS.example);
+// For headless tests: #autorun&rover=skid4&course=arena picks presets.
+const hashArgs = new URLSearchParams(location.hash.slice(1).replace(/^autorun&?/, ''));
+if (ROVER_PRESETS[hashArgs.get('rover')]) rover = clone(ROVER_PRESETS[hashArgs.get('rover')]);
+if (PRESETS[hashArgs.get('course')]) course = clone(PRESETS[hashArgs.get('course')]);
+roverChanged();
+draft = clone(rover);
+const savedSpeed = load('speed');
+if (savedSpeed) { $('speed').value = savedSpeed; ctl.speed = savedSpeed === 'max' ? Infinity : Number(savedSpeed); }
+const savedPath = load('srcPath');
+if (savedPath) $('srcPath').value = savedPath;
+const savedTab = hashArgs.get('tab') ? 'tab-' + hashArgs.get('tab') + '-btn' : load('tab');
+if (savedTab && $(savedTab)) $(savedTab).click();
+buildPhys(); readPhys();
+$('courseJson').value = formatCourse(course);
+sizeCanvas();
+syncControls();
+requestAnimationFrame(draw);
+initPython();
+})();
+</script>
+</body>
+</html>

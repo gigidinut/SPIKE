@@ -1,0 +1,37 @@
+<section id="explorer" data-transition="fade" style="display:flex; flex-direction:column; gap:40px; padding:128px 128px 160px; background:#f5f2ea">
+  <p style="font-family:Rubik, Arial, sans-serif; font-size:28px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#b4531a">Package 3 · Maze explorer</p>
+  <h2 style="font-family:Oswald, Arial, sans-serif; font-size:80px; font-weight:600; line-height:1.1; color:#15232b">It maps the course and searches all of it</h2>
+  <div style="display:flex; flex-direction:row; gap:56px; align-items:start">
+    <div style="display:flex; flex-direction:column; gap:24px; flex:1">
+      <ol style="font-family:Rubik, Arial, sans-serif; font-size:30px; line-height:1.4; color:#15232b">
+        <li><b>Plan:</b> pick the nearest square not searched yet.</li>
+        <li><b>Look:</b> measure ahead; one look maps a whole line.</li>
+        <li><b>Move</b> one square, and repeat until done.</li>
+      </ol>
+      <p style="padding:24px; font-family:'Courier New', monospace; font-size:26px; line-height:1.5; color:#f5f2ea; background:#15232b; border-radius:12px">await explore(find=color.GREEN,<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;near=(-30, 110))</p>
+      <div style="display:flex; flex-direction:column; gap:8px; padding:4px 0 4px 24px; border-left:6px solid #2e8b4c">
+        <h3 style="font-family:Rubik, Arial, sans-serif; font-size:34px; font-weight:600; color:#1e6b3a">Good for</h3>
+        <p style="font-family:Rubik, Arial, sans-serif; font-size:28px; line-height:1.35; color:#4a5560">Patches anywhere it can reach. Colours in a set order.</p>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:8px; padding:4px 0 4px 24px; border-left:6px solid #b4531a">
+        <h3 style="font-family:Rubik, Arial, sans-serif; font-size:34px; font-weight:600; color:#b4531a">Watch out</h3>
+        <p style="font-family:Rubik, Arial, sans-serif; font-size:28px; line-height:1.35; color:#4a5560">Could be slower. Hints help.</p>
+      </div>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:16px; align-items:center">
+      <svg xmlns="http://www.w3.org/2000/svg" aria-label="The same course. Small squares cover all the floor the rover could reach, including both patches." viewBox="0 0 612 476" style="width:612px; height:476px"><g transform="scale(0.85)">
+<defs><pattern id="sq" width="40" height="40" patternUnits="userSpaceOnUse"><rect x="2" y="2" width="36" height="36" rx="4" fill="#F3C29B"/></pattern></defs>
+<rect x="0" y="0" width="720" height="560" rx="16" fill="#FCFBF7"/>
+<rect x="28" y="28" width="664" height="504" fill="url(#sq)"/>
+<rect x="40" y="40" width="90" height="70" fill="#4C9A6A"/>
+<rect x="520" y="290" width="90" height="70" fill="#C84B3C"/>
+<rect x="20" y="20" width="680" height="520" fill="none" stroke="#8A5A3C" stroke-width="16"/>
+<line x1="360" y1="20" x2="360" y2="320" stroke="#8A5A3C" stroke-width="16"/>
+<line x1="20" y1="400" x2="240" y2="400" stroke="#8A5A3C" stroke-width="16"/>
+<circle cx="620" cy="500" r="16" fill="#15232B"/>
+</g></svg>
+      <p style="width:612px; font-family:Rubik, Arial, sans-serif; font-size:26px; color:#4a5560">Orange squares: floor it has searched. It reaches both patches, but it visits every square to get there.</p>
+    </div>
+  </div>
+  <aside>Package three: the maze explorer. The rover thinks of the floor as a grid of small squares, and draws a map as it goes. Over and over, it plans: which is the nearest square I haven’t searched yet? It looks: one measurement with the distance sensor maps a whole line of squares. And it moves one square. It keeps going until it has searched everywhere it can reach. So it finds patches anywhere, even in the middle of the floor. It can also find colours in a set order: explore with find equals GREEN stops on green, does your actions, and then you can explore for the next colour. The cost is time: a full search takes minutes. You can give it hints, like near equals minus 30, 110, meaning roughly 30 centimetres left and 110 ahead, so it searches there first.</aside>
+</section>

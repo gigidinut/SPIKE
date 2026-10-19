@@ -1,0 +1,14 @@
+<section id="compare" data-transition="fade" style="display:flex; flex-direction:column; gap:44px; padding:128px 128px 160px; background:#f5f2ea">
+  <h2 style="font-family:Oswald, Arial, sans-serif; font-size:80px; font-weight:600; line-height:1.1; color:#15232b">The three packages side by side</h2>
+  <table style="font-family:Rubik, Arial, sans-serif; font-size:30px; color:#15232b; background:#fcfbf7; border:1px solid #dcd6c8">
+    <tr style="background:#15232b"><th style="width:22%; color:#f5f2ea"></th><th style="width:26%; color:#f5f2ea">Basic functions</th><th style="width:26%; color:#f5f2ea">Wall follower</th><th style="width:26%; color:#f5f2ea">Maze explorer</th></tr>
+    <tr><td>Plans the route</td><td>You</td><td>The rover</td><td>The rover</td></tr>
+    <tr style="background:#f1ece0"><td>How</td><td>Your list of moves</td><td>One hand on the wall</td><td>Draws a map, searches it</td></tr>
+    <tr><td>Patches by walls</td><td>If your route passes</td><td>Yes</td><td>Yes</td></tr>
+    <tr style="background:#f1ece0"><td>Patches in the open</td><td>If your route passes</td><td>Missed</td><td>Yes</td></tr>
+    <tr><td>Colours in order</td><td>Yes, you code it</td><td>No: as it meets them</td><td>Yes: explore(find=…)</td></tr>
+    <tr style="background:#f1ece0"><td>Time for a run</td><td>Fastest</td><td>Medium</td><td>Slowest: minutes</td></tr>
+    <tr><td>Price</td><td>[price]</td><td>[price]</td><td>[price]</td></tr>
+  </table>
+  <aside>Here they are side by side. With Basic functions you plan the route; with the other two, the rover does. Basic functions finds a patch only if your route goes over it. The wall follower finds patches along the walls, but it misses patches out in the open floor. The explorer finds patches anywhere it can reach. If the colours must be found in a set order, Basic functions can do that because you write the route, and the explorer can do it with explore(find=…); the wall follower simply reacts to colours in the order it meets them. And the price of that: a hard-coded route is fastest, the wall follower is in the middle, and a full search with the explorer takes minutes. Prices: [read out prices].</aside>
+</section>

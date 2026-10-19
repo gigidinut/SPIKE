@@ -1,0 +1,23 @@
+<section id="design" data-transition="fade" style="display:flex; flex-direction:column; gap:48px; padding:128px 128px 160px; background:#f5f2ea">
+  <p style="font-family:Rubik, Arial, sans-serif; font-size:28px; font-weight:600; letter-spacing:3px; text-transform:uppercase; color:#b4531a">Before you build</p>
+  <h2 style="font-family:Oswald, Arial, sans-serif; font-size:80px; font-weight:600; line-height:1.1; color:#15232b">Design your rover for the software</h2>
+  <div style="display:grid; gap:28px; grid-template-columns:1fr 1fr">
+    <div style="display:flex; flex-direction:column; gap:10px; padding:36px; background:#fcfbf7; border:1px solid #dcd6c8; border-radius:16px">
+      <h3 style="font-family:Rubik, Arial, sans-serif; font-size:38px; font-weight:600; color:#15232b">It should turn on the spot (skid steer)</h3>
+      <p style="font-family:Rubik, Arial, sans-serif; font-size:28px; line-height:1.35; color:#4a5560">Driven wheels on both sides. A rover that steers like a car cannot run the autonomy as it is.</p>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px; padding:36px; background:#fcfbf7; border:1px solid #dcd6c8; border-radius:16px">
+      <h3 style="font-family:Rubik, Arial, sans-serif; font-size:38px; font-weight:600; color:#15232b">Think about size</h3>
+      <p style="font-family:Rubik, Arial, sans-serif; font-size:28px; line-height:1.35; color:#4a5560">Spinning needs a clear circle: about 27 cm across for a 15 × 18 cm rover. Can your rover get through the gaps?</p>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px; padding:36px; background:#fcfbf7; border:1px solid #dcd6c8; border-radius:16px">
+      <h3 style="font-family:Rubik, Arial, sans-serif; font-size:38px; font-weight:600; color:#15232b">Four wheels work too</h3>
+      <p style="font-family:Rubik, Arial, sans-serif; font-size:28px; line-height:1.35; color:#4a5560">They slide when turning, so turns may be slower. Two quick tests measure it for the simulator.</p>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:10px; padding:36px; background:#fcfbf7; border:1px solid #dcd6c8; border-radius:16px">
+      <h3 style="font-family:Rubik, Arial, sans-serif; font-size:38px; font-weight:600; color:#15232b">Sensors in the right place</h3>
+      <p style="font-family:Rubik, Arial, sans-serif; font-size:28px; line-height:1.35; color:#4a5560">Distance sensor straight ahead, level with the walls. Colour sensor facing the floor, close to it.</p>
+    </div>
+  </div>
+  <aside>A word about design, before you build. The software turns the rover on the spot, by running one side forwards and the other backwards. So you need driven wheels on both sides; a rover that steers like a car can’t run the autonomy. When the rover spins, its corners sweep a circle: about 27 centimetres across for a rover 15 by 18. Gaps narrower than that are no-go zones, so a compact rover gets through more of the course. Four or six wheels work fine; they slide a bit when turning, so turns are slower, and two of the setup tests measure that for the simulator. And put the sensors where they can do their job: the distance sensor pointing straight ahead at the walls, and the colour sensor facing the floor, close to it.</aside>
+</section>
