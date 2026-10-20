@@ -10,10 +10,11 @@
 #   await step(direction)            try to move one square: "done", "blocked" or "no room"
 #   await check_by_wall(direction)   sweep the colour sensor up to the wall ahead
 #@settings
-COURSE_NORTH_CM = 220   # how far the course reaches from the start in each direction.
+COURSE_NORTH_CM = 222   # how far the course reaches from the start in each direction.
 COURSE_SOUTH_CM = 0     # The rover never moves outside it. SOUTH is 0 when the start
-COURSE_EAST_CM = 220    # is on the edge of the course, so the rover cannot wander
-COURSE_WEST_CM = 220    # out through the entrance.
+COURSE_EAST_CM = 24     # is on the edge of the course, so the rover cannot wander
+COURSE_WEST_CM = 135    # out through the entrance. These fit the real course
+                        # (1.6 m x 2.3 m inside), starting in its bottom-right gap.
 CHECK_BY_WALLS = True   # also check the floor next to each wall the rover meets, which its
                         # path through the middle of the squares never reaches. Slower.
 #@tuning
@@ -136,6 +137,8 @@ async def check_by_wall(direction):
             return   # already close enough
         if not await turn_to(direction + 180):
             return   # no room to turn round here
+        # Reverse slowly: if the reading was a little out, the rover only
+        # touches the wall gently, and its stuck check stops it.
         print("wall check: reversing up to the wall")
-        await drive_backward(move)
+        await drive(move, -DRIVE_SLOW_SPEED)
         await drive_forward(cm_driven())

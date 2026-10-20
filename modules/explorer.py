@@ -130,6 +130,22 @@ def can_move(course_map, square, direction):
     return True
 
 
+def course_squares():
+    """How many squares the course has."""
+    wide = COURSE_WEST_CM // STEP_CM + COURSE_EAST_CM // STEP_CM + 1
+    deep = COURSE_SOUTH_CM // STEP_CM + COURSE_NORTH_CM // STEP_CM + 1
+    return wide * deep
+
+
+def square_number(square):
+    """Number the course's squares 0, 1, 2 ... row by row, from the
+    south-west corner. square must be inside the course."""
+    wide = COURSE_WEST_CM // STEP_CM + COURSE_EAST_CM // STEP_CM + 1
+    east = square[0] + COURSE_WEST_CM // STEP_CM
+    north = square[1] + COURSE_SOUTH_CM // STEP_CM
+    return north * wide + east
+
+
 def next_move(course_map, square, facing, towards=None, near=None):
     """Choose the unsearched square to head for, and the first move towards it.
 
@@ -173,42 +189,54 @@ def next_move(course_map, square, facing, towards=None, near=None):
     best_move = None
     best_square = None
     best_score = 0
-    reached = {square}
-    ripple = []        # (square, first move, steps) - nearest first
+    # Which squares the ripple has reached: one byte for every square of the
+    # course, 1 once reached. The hub has little memory, so the ripple only
+    # keeps the ring of squares it is spreading from, not every square so far.
+    reached = bytearray(course_squares())
+    if inside_course(square):
+        reached[square_number(square)] = 1
+    ring = []          # (square, first move) for each square in the ring
     for direction in directions:
         if can_move(course_map, square, direction):
             ahead = next_square(square, direction)
-            reached.add(ahead)
-            ripple.append((ahead, direction, 1))
+            reached[square_number(ahead)] = 1
+            ring.append((ahead, direction))
 
-    i = 0
-    while i < len(ripple):
-        here, first_move, steps = ripple[i]
-        i += 1
-        if here not in course_map.searched:
-            if towards is None and near is None:
-                return first_move, here
-            if near is not None:
-                # How far this square is from the spot, in squares (Pythagoras).
-                # Rounded to hundredths, so squares that are equally far from
-                # it score exactly the same.
-                east_gap = here[0] - near[0]
-                north_gap = here[1] - near[1]
-                away = round(100 * math.sqrt(east_gap * east_gap + north_gap * north_gap)) / 100
-                score = steps + HEAD_STRENGTH * away
-            else:
-                # How far this square lies in the towards direction, in squares.
-                how_far_that_way = (here[0] * towards_east + here[1] * towards_north) / 100
-                score = steps - HEAD_STRENGTH * how_far_that_way
-            if best_move is None or score < best_score:
-                best_move = first_move
-                best_square = here
-                best_score = score
-        for direction in directions:
-            ahead = next_square(here, direction)
-            if ahead not in reached and can_move(course_map, here, direction):
-                reached.add(ahead)
-                ripple.append((ahead, first_move, steps + 1))
+    steps = 1          # how many steps from the rover the ring is
+    while len(ring) > 0:
+        if near is not None and best_move is not None and steps > best_score:
+            # With near, no square scores less than its number of steps, so
+            # nothing further out can beat the best one now.
+            break
+        next_ring = []
+        for here, first_move in ring:
+            if here not in course_map.searched:
+                if towards is None and near is None:
+                    return first_move, here
+                if near is not None:
+                    # How far this square is from the spot, in squares (Pythagoras).
+                    # Rounded to hundredths, so squares that are equally far from
+                    # it score exactly the same.
+                    east_gap = here[0] - near[0]
+                    north_gap = here[1] - near[1]
+                    away = round(100 * math.sqrt(east_gap * east_gap + north_gap * north_gap)) / 100
+                    score = steps + HEAD_STRENGTH * away
+                else:
+                    # How far this square lies in the towards direction, in squares.
+                    how_far_that_way = (here[0] * towards_east + here[1] * towards_north) / 100
+                    score = steps - HEAD_STRENGTH * how_far_that_way
+                if best_move is None or score < best_score:
+                    best_move = first_move
+                    best_square = here
+                    best_score = score
+            for direction in directions:
+                if can_move(course_map, here, direction):
+                    ahead = next_square(here, direction)
+                    if not reached[square_number(ahead)]:
+                        reached[square_number(ahead)] = 1
+                        next_ring.append((ahead, first_move))
+        ring = next_ring
+        steps = steps + 1
     return best_move, best_square
 
 

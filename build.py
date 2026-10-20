@@ -19,7 +19,7 @@ import datetime
 import os
 import re
 
-VERSION = "1.1"     # change this whenever the modules change, so teams can say which they have
+VERSION = "1.2"     # change this whenever the modules change, so teams can say which they have
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 MODULE_DIR = os.path.join(HERE, "modules")
@@ -138,13 +138,15 @@ def build(package, team):
     out += [
         "# Package: " + title + ". Version " + VERSION + ", built " + datetime.date.today().isoformat() + ".",
         "#",
-        "# YOU ONLY CHANGE THESE PARTS OF THIS FILE:",
+        "# TO GET YOUR ROVER GOING, YOU ONLY NEED TO CHANGE THESE PARTS:",
         "#   SETTINGS           just below: describe your rover and your course",
         "#   YOUR PROGRAM       at the very bottom: choose or write what the rover does",
         "#   on_colour_found()  only for your own colour actions: search the file",
         "#                      for ADD YOUR OWN ACTIONS HERE",
-        "# Everything else is the rover software. Read it if you are curious, but",
-        "# do not change it. The User Manual explains every setting and function.",
+        "# Everything else is the rover software. Read it, play with it and change",
+        "# it if you like: that is the best way to understand how it works. Keep a",
+        "# copy of a version that works first, so you can always go back.",
+        "# The User Manual explains every setting and function.",
         "#",
         "# 1. Copy this whole file into a new Python project in the SPIKE App.",
         "# 2. Change the SETTINGS to match your rover.",
@@ -169,7 +171,7 @@ def build(package, team):
             out += modules[name]["settings"]
     out += ["", ""]
 
-    out += banner("FINE TUNING - leave these alone unless the User Manual tells you to change them")
+    out += banner("FINE TUNING - the defaults work for most rovers; the User Manual explains each one")
     for name in sections:
         if modules[name]["tuning"]:
             out += ["", "# ---- " + modules[name]["title"] + " ----"]

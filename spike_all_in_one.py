@@ -1,15 +1,17 @@
 # ======================================================================
 # ROVER SOFTWARE - EVERYTHING (FOR TESTING) - All modules
 # ======================================================================
-# Package: Everything (for testing). Version 1.1, built 2026-10-17.
+# Package: Everything (for testing). Version 1.2, built 2026-10-20.
 #
-# YOU ONLY CHANGE THESE PARTS OF THIS FILE:
+# TO GET YOUR ROVER GOING, YOU ONLY NEED TO CHANGE THESE PARTS:
 #   SETTINGS           just below: describe your rover and your course
 #   YOUR PROGRAM       at the very bottom: choose or write what the rover does
 #   on_colour_found()  only for your own colour actions: search the file
 #                      for ADD YOUR OWN ACTIONS HERE
-# Everything else is the rover software. Read it if you are curious, but
-# do not change it. The User Manual explains every setting and function.
+# Everything else is the rover software. Read it, play with it and change
+# it if you like: that is the best way to understand how it works. Keep a
+# copy of a version that works first, so you can always go back.
+# The User Manual explains every setting and function.
 #
 # 1. Copy this whole file into a new Python project in the SPIKE App.
 # 2. Change the SETTINGS to match your rover.
@@ -26,7 +28,7 @@ import math
 import time
 from hub import port, motion_sensor, button
 
-SOFTWARE_VERSION = "1.1"     # which version of the software this is
+SOFTWARE_VERSION = "1.2"     # which version of the software this is
 
 # Compass directions, as gyro headings. NORTH is the way the rover faced when
 # the program started. Turning left makes the number bigger.
@@ -75,6 +77,9 @@ ROVER_BACK_CM = 11
 # Where the sensors sit along the rover, in cm from the turning point.
 # Positive = in front of it, negative = behind it.
 DISTANCE_SENSOR_POSITION_CM = 7
+# Building tip: a colour sensor IN FRONT is better. To check the floor next to
+# a wall, a rover with it in front just drives up and back. With it behind, the
+# rover must turn round and reverse blind at every wall - slower and riskier.
 COLOUR_SENSOR_POSITION_CM = -10
 
 # Which side of the hub faces up. motion_sensor.TOP means the hub lies flat
@@ -90,10 +95,11 @@ COLOUR_PAUSE_MS = 5000     # how long to stop on a colour, in ms
 REACT_ONCE = True          # True: react to each colour only the first time it is found
 
 # ---- Grid moves ----
-COURSE_NORTH_CM = 220   # how far the course reaches from the start in each direction.
+COURSE_NORTH_CM = 222   # how far the course reaches from the start in each direction.
 COURSE_SOUTH_CM = 0     # The rover never moves outside it. SOUTH is 0 when the start
-COURSE_EAST_CM = 220    # is on the edge of the course, so the rover cannot wander
-COURSE_WEST_CM = 220    # out through the entrance.
+COURSE_EAST_CM = 24     # is on the edge of the course, so the rover cannot wander
+COURSE_WEST_CM = 135    # out through the entrance. These fit the real course
+                        # (1.6 m x 2.3 m inside), starting in its bottom-right gap.
 CHECK_BY_WALLS = True   # also check the floor next to each wall the rover meets, which its
                         # path through the middle of the squares never reaches. Slower.
 
@@ -109,13 +115,14 @@ HEAD_TOWARDS = None        # which way to search first when explore() gets no ne
 
 
 # ======================================================================
-# FINE TUNING - leave these alone unless the User Manual tells you to change them
+# FINE TUNING - the defaults work for most rovers; the User Manual explains each one
 # ======================================================================
 
 # ---- Movement ----
 DRIVE_SPEED = 400          # wheel speed when driving, degrees per second (max about 1000)
-DRIVE_SLOW_SPEED = 150     # wheel speed for the end of a drive, so it stops on the spot
-DRIVE_SLOW_ZONE_CM = 3     # slow down when this many cm from the end
+DRIVE_SLOW_SPEED = 150     # wheel speed at the start and end of a drive, so it starts and stops smoothly
+DRIVE_SPEED_UP_CM = 4      # speed up gently over this many cm at the start; 0 = full speed at once
+DRIVE_SLOW_ZONE_CM = 4     # slow down gently over this many cm at the end
 TURN_SPEED = 200           # wheel speed when turning
 TURN_SLOW_SPEED = 100      # wheel speed for the end of a turn, so it stops on target
 TURN_SLOW_ZONE = 15        # slow down when this many degrees from the target
@@ -126,9 +133,9 @@ STUCK_MS = 1000            # no progress for this long while driving or turning 
 TICK_MS = 20               # how often to check the sensors while moving, in ms
 
 # ---- Distance sensor ----
-MAX_TRUSTED_CM = 180   # readings further than this count as "no echo". In a course
-                       # where no straight path is over 2 m, a longer reading means
-                       # the sound missed, not that the way is clear.
+MAX_TRUSTED_CM = 200   # readings further than this count as "no echo". The sensor
+                       # cannot see further than 2 m. If no straight path in your
+                       # course is that long, set this a little below the longest one.
 SETTLE_MS = 150        # wait this long after moving before a careful reading
 
 # ---- Grid moves ----
@@ -590,6 +597,7 @@ async def setup_check():
 def check_movement_settings():
     check_number("DRIVE_SPEED", DRIVE_SPEED, 50, 1000)
     check_number("DRIVE_SLOW_SPEED", DRIVE_SLOW_SPEED, 20, 1000)
+    check_number("DRIVE_SPEED_UP_CM", DRIVE_SPEED_UP_CM, 0, 20)
     check_number("DRIVE_SLOW_ZONE_CM", DRIVE_SLOW_ZONE_CM, 0, 20)
     check_number("TURN_SPEED", TURN_SPEED, 30, 1000)
     check_number("TURN_SLOW_SPEED", TURN_SLOW_SPEED, 10, 1000)
@@ -661,7 +669,10 @@ async def drive(cm, speed, stop_at_wall_cm=0):
     """
     global last_drive_cm, driving_way, counted_degrees
     goal = cm_to_wheel_degrees(abs(cm))
-    slow_from = goal - cm_to_wheel_degrees(DRIVE_SLOW_ZONE_CM)
+    speed_up = cm_to_wheel_degrees(DRIVE_SPEED_UP_CM)
+    slow_zone = cm_to_wheel_degrees(DRIVE_SLOW_ZONE_CM)
+    top = abs(speed)
+    low = min(top, DRIVE_SLOW_SPEED)
     reset_wheel_counters()
     counted_degrees = 0
     if speed > 0:
@@ -679,12 +690,19 @@ async def drive(cm, speed, stop_at_wall_cm=0):
                     result = "wall"
                     break
 
-            # Slow down for the last few cm, or the rover rolls on past the end.
-            now_speed = speed
-            if wheel_degrees() > slow_from:
-                now_speed = DRIVE_SLOW_SPEED
-                if speed < 0:
-                    now_speed = -DRIVE_SLOW_SPEED
+            # Speed up gently at the start and slow down gently at the end,
+            # so the rover does not lurch, and stops on the spot instead of
+            # rolling on past the end. The speed goes in a straight line
+            # from low to top over the first DRIVE_SPEED_UP_CM, and back
+            # down to low over the last DRIVE_SLOW_ZONE_CM.
+            done = wheel_degrees()
+            now_speed = top
+            if done < speed_up:
+                now_speed = low + (top - low) * done / speed_up
+            if goal - done < slow_zone:
+                now_speed = min(now_speed, low + (top - low) * (goal - done) / slow_zone)
+            if speed < 0:
+                now_speed = -now_speed
 
             # Steering: error is how far the rover has drifted. If it has
             # drifted right (error above 0), the right wheel speeds up and the
@@ -1203,8 +1221,10 @@ async def check_by_wall(direction):
             return   # already close enough
         if not await turn_to(direction + 180):
             return   # no room to turn round here
+        # Reverse slowly: if the reading was a little out, the rover only
+        # touches the wall gently, and its stuck check stops it.
         print("wall check: reversing up to the wall")
-        await drive_backward(move)
+        await drive(move, -DRIVE_SLOW_SPEED)
         await drive_forward(cm_driven())
 
 
@@ -1430,6 +1450,22 @@ def can_move(course_map, square, direction):
     return True
 
 
+def course_squares():
+    """How many squares the course has."""
+    wide = COURSE_WEST_CM // STEP_CM + COURSE_EAST_CM // STEP_CM + 1
+    deep = COURSE_SOUTH_CM // STEP_CM + COURSE_NORTH_CM // STEP_CM + 1
+    return wide * deep
+
+
+def square_number(square):
+    """Number the course's squares 0, 1, 2 ... row by row, from the
+    south-west corner. square must be inside the course."""
+    wide = COURSE_WEST_CM // STEP_CM + COURSE_EAST_CM // STEP_CM + 1
+    east = square[0] + COURSE_WEST_CM // STEP_CM
+    north = square[1] + COURSE_SOUTH_CM // STEP_CM
+    return north * wide + east
+
+
 def next_move(course_map, square, facing, towards=None, near=None):
     """Choose the unsearched square to head for, and the first move towards it.
 
@@ -1473,42 +1509,54 @@ def next_move(course_map, square, facing, towards=None, near=None):
     best_move = None
     best_square = None
     best_score = 0
-    reached = {square}
-    ripple = []        # (square, first move, steps) - nearest first
+    # Which squares the ripple has reached: one byte for every square of the
+    # course, 1 once reached. The hub has little memory, so the ripple only
+    # keeps the ring of squares it is spreading from, not every square so far.
+    reached = bytearray(course_squares())
+    if inside_course(square):
+        reached[square_number(square)] = 1
+    ring = []          # (square, first move) for each square in the ring
     for direction in directions:
         if can_move(course_map, square, direction):
             ahead = next_square(square, direction)
-            reached.add(ahead)
-            ripple.append((ahead, direction, 1))
+            reached[square_number(ahead)] = 1
+            ring.append((ahead, direction))
 
-    i = 0
-    while i < len(ripple):
-        here, first_move, steps = ripple[i]
-        i += 1
-        if here not in course_map.searched:
-            if towards is None and near is None:
-                return first_move, here
-            if near is not None:
-                # How far this square is from the spot, in squares (Pythagoras).
-                # Rounded to hundredths, so squares that are equally far from
-                # it score exactly the same.
-                east_gap = here[0] - near[0]
-                north_gap = here[1] - near[1]
-                away = round(100 * math.sqrt(east_gap * east_gap + north_gap * north_gap)) / 100
-                score = steps + HEAD_STRENGTH * away
-            else:
-                # How far this square lies in the towards direction, in squares.
-                how_far_that_way = (here[0] * towards_east + here[1] * towards_north) / 100
-                score = steps - HEAD_STRENGTH * how_far_that_way
-            if best_move is None or score < best_score:
-                best_move = first_move
-                best_square = here
-                best_score = score
-        for direction in directions:
-            ahead = next_square(here, direction)
-            if ahead not in reached and can_move(course_map, here, direction):
-                reached.add(ahead)
-                ripple.append((ahead, first_move, steps + 1))
+    steps = 1          # how many steps from the rover the ring is
+    while len(ring) > 0:
+        if near is not None and best_move is not None and steps > best_score:
+            # With near, no square scores less than its number of steps, so
+            # nothing further out can beat the best one now.
+            break
+        next_ring = []
+        for here, first_move in ring:
+            if here not in course_map.searched:
+                if towards is None and near is None:
+                    return first_move, here
+                if near is not None:
+                    # How far this square is from the spot, in squares (Pythagoras).
+                    # Rounded to hundredths, so squares that are equally far from
+                    # it score exactly the same.
+                    east_gap = here[0] - near[0]
+                    north_gap = here[1] - near[1]
+                    away = round(100 * math.sqrt(east_gap * east_gap + north_gap * north_gap)) / 100
+                    score = steps + HEAD_STRENGTH * away
+                else:
+                    # How far this square lies in the towards direction, in squares.
+                    how_far_that_way = (here[0] * towards_east + here[1] * towards_north) / 100
+                    score = steps - HEAD_STRENGTH * how_far_that_way
+                if best_move is None or score < best_score:
+                    best_move = first_move
+                    best_square = here
+                    best_score = score
+            for direction in directions:
+                if can_move(course_map, here, direction):
+                    ahead = next_square(here, direction)
+                    if not reached[square_number(ahead)]:
+                        reached[square_number(ahead)] = 1
+                        next_ring.append((ahead, first_move))
+        ring = next_ring
+        steps = steps + 1
     return best_move, best_square
 
 
@@ -1744,13 +1792,13 @@ async def explore(find=None, near=None, towards=None):
 async def my_program():
     # 1. Find GREEN - in the middle, about 28 cm left of the start and 112 cm
     #    ahead - and stand on it for 5 seconds.
-    if not await explore(find=color.GREEN, near=(-28, 112)):
+    if not await explore(find=color.GREEN, near=(0, 110)):
         return     # no GREEN anywhere it can reach: RED would not count, so stop here
     await runloop.sleep_ms(5000)
 
     # 2. Find RED - top-left corner, about 125 cm left and 183 cm ahead - and
     #    stop on it. The run ends there.
-    await explore(find=color.RED, near=(-125, 183))
+    await explore(find=color.BLUE, near=(-65, 220))
 
 
 # Choose what runs: exactly ONE of these lines must have no # in front.

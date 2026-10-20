@@ -16,8 +16,9 @@
 # NORTH_WEST, NORTH_EAST, SOUTH_WEST, SOUTH_EAST are half way between.
 #@tuning
 DRIVE_SPEED = 400          # wheel speed when driving, degrees per second (max about 1000)
-DRIVE_SLOW_SPEED = 150     # wheel speed for the end of a drive, so it stops on the spot
-DRIVE_SLOW_ZONE_CM = 3     # slow down when this many cm from the end
+DRIVE_SLOW_SPEED = 150     # wheel speed at the start and end of a drive, so it starts and stops smoothly
+DRIVE_SPEED_UP_CM = 4      # speed up gently over this many cm at the start; 0 = full speed at once
+DRIVE_SLOW_ZONE_CM = 4     # slow down gently over this many cm at the end
 TURN_SPEED = 200           # wheel speed when turning
 TURN_SLOW_SPEED = 100      # wheel speed for the end of a turn, so it stops on target
 TURN_SLOW_ZONE = 15        # slow down when this many degrees from the target
@@ -30,6 +31,7 @@ TICK_MS = 20               # how often to check the sensors while moving, in ms
 def check_movement_settings():
     check_number("DRIVE_SPEED", DRIVE_SPEED, 50, 1000)
     check_number("DRIVE_SLOW_SPEED", DRIVE_SLOW_SPEED, 20, 1000)
+    check_number("DRIVE_SPEED_UP_CM", DRIVE_SPEED_UP_CM, 0, 20)
     check_number("DRIVE_SLOW_ZONE_CM", DRIVE_SLOW_ZONE_CM, 0, 20)
     check_number("TURN_SPEED", TURN_SPEED, 30, 1000)
     check_number("TURN_SLOW_SPEED", TURN_SLOW_SPEED, 10, 1000)
@@ -101,7 +103,10 @@ async def drive(cm, speed, stop_at_wall_cm=0):
     """
     global last_drive_cm, driving_way, counted_degrees
     goal = cm_to_wheel_degrees(abs(cm))
-    slow_from = goal - cm_to_wheel_degrees(DRIVE_SLOW_ZONE_CM)
+    speed_up = cm_to_wheel_degrees(DRIVE_SPEED_UP_CM)
+    slow_zone = cm_to_wheel_degrees(DRIVE_SLOW_ZONE_CM)
+    top = abs(speed)
+    low = min(top, DRIVE_SLOW_SPEED)
     reset_wheel_counters()
     counted_degrees = 0
     if speed > 0:
@@ -119,12 +124,19 @@ async def drive(cm, speed, stop_at_wall_cm=0):
                     result = "wall"
                     break
 
-            # Slow down for the last few cm, or the rover rolls on past the end.
-            now_speed = speed
-            if wheel_degrees() > slow_from:
-                now_speed = DRIVE_SLOW_SPEED
-                if speed < 0:
-                    now_speed = -DRIVE_SLOW_SPEED
+            # Speed up gently at the start and slow down gently at the end,
+            # so the rover does not lurch, and stops on the spot instead of
+            # rolling on past the end. The speed goes in a straight line
+            # from low to top over the first DRIVE_SPEED_UP_CM, and back
+            # down to low over the last DRIVE_SLOW_ZONE_CM.
+            done = wheel_degrees()
+            now_speed = top
+            if done < speed_up:
+                now_speed = low + (top - low) * done / speed_up
+            if goal - done < slow_zone:
+                now_speed = min(now_speed, low + (top - low) * (goal - done) / slow_zone)
+            if speed < 0:
+                now_speed = -now_speed
 
             # Steering: error is how far the rover has drifted. If it has
             # drifted right (error above 0), the right wheel speeds up and the

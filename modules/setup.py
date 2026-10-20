@@ -51,6 +51,11 @@ ROVER_BACK_CM = 11
 # Where the sensors sit along the rover, in cm from the turning point.
 # Positive = in front of it, negative = behind it.
 DISTANCE_SENSOR_POSITION_CM = 7
+#@only grid
+# Building tip: a colour sensor IN FRONT is better. To check the floor next to
+# a wall, a rover with it in front just drives up and back. With it behind, the
+# rover must turn round and reverse blind at every wall - slower and riskier.
+#@end
 COLOUR_SENSOR_POSITION_CM = -10
 
 # Which side of the hub faces up. motion_sensor.TOP means the hub lies flat

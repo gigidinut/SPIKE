@@ -16,7 +16,7 @@ const {
   WidthType, ShadingType, BorderStyle, ImageRun, Footer, PageNumber, LevelFormat,
 } = require('docx');
 
-const VERSION = '1.1';
+const VERSION = '1.2';
 const DATE = '17 October 2026';
 const OUT = __dirname;
 const W = 9638;                  // text width in DXA: A4 with 2 cm margins
@@ -169,8 +169,8 @@ function aboutChapter(pkg) {
       'Your program file: the `.py` file you were given, with your team name at the top.',
       'The **rover simulator** and its manual, to test on a computer before you test on the floor.',
     ]),
-    H2('The parts of the file you change'),
-    P('Your program file is long, but you only ever change three parts of it. Everything else is the rover software: read it if you are curious, but do not change it.'),
+    H2('The parts of the file you change first'),
+    P('Your program file is long, but to get your rover going you only need to change three parts of it. Everything else is the rover software. Read it, play with it and change it if you like: that is the best way to understand how the rover works. Save a copy of a version that works first, so you can always go back.'),
     table(['Part', 'Where', 'What it is for'], [
       ['**SETTINGS**', 'Near the top', 'Describe your rover (ports, wheel size, where the sensors are) and your course.'],
       ['**YOUR PROGRAM**', 'At the very bottom', 'Choose what runs, or write your own list of moves.'],
@@ -219,7 +219,7 @@ function fileChapter(pkg) {
       ['Header', 'Your team name, the package and its version. The first line the rover prints is `=== ROVER SOFTWARE ' + VERSION + ' ===`.'],
       ['Compass directions', '`NORTH`, `WEST`, `SOUTH`, `EAST` and the four in between. You use these names in your program.'],
       ['**SETTINGS**', 'The settings every team must fill in (chapter 4).'],
-      ['FINE TUNING', 'Speeds and other numbers you can normally leave alone (chapter 10).'],
+      ['FINE TUNING', 'Speeds and other numbers whose defaults work for most rovers (chapter 10).'],
       ['The rover software', 'One section per part: Setup, Movement, Distance sensor, Colour sensor' + (pkg === 'basic' ? '' : ', Grid moves, ' + (pkg === 'wall' ? 'Wall follower' : 'Maze explorer')) + '. Each section starts with a short description of what it does and which functions you can use.'],
       ['**YOUR PROGRAM**', 'Your own program, and the lines that choose what runs.'],
     ], [0.28, 0.72]),
@@ -552,7 +552,7 @@ function explorerChapter() {
   ];
 }
 
-function roverFitChapter() {
+function roverFitChapter(pkg) {
   return [
     H1('9. Will the software work with my rover?'),
     P('The software works with most rover designs, but not all. Check yours before you build too much.'),
@@ -601,20 +601,22 @@ function roverFitChapter() {
       'The **colour sensor** must face the floor, close to it. It can be in front of or behind the wheels; set `COLOUR_SENSOR_POSITION_CM` to match.',
       'The **hub** can sit any way up, as long as `HUB_FACE_UP` says which way.',
     ]),
-  ];
+  ].concat(pkg === 'basic' ? [] : [
+    note('**Front or back for the colour sensor?** Front is better. With `CHECK_BY_WALLS = True`, a rover with the sensor in front just drives up to each wall and back. With it behind, the rover must turn round at every wall and reverse blind (there is no sensor at the back), which is slower, riskier, and needs room to turn.', 'key'),
+  ]);
 }
 
 function tuningChapter(pkg) {
   const k = PACKAGES[pkg];
   const rows = [
     ['`DRIVE_SPEED` (400)', 'Wheel speed when driving, in degrees per second (up to about 1000). Lower it if the wheels slip or the rover tips.'],
-    ['`DRIVE_SLOW_SPEED` (150), `DRIVE_SLOW_ZONE_CM` (3)', 'The rover slows down for the last few cm of a drive, so it stops on the spot. If drives overshoot, make the zone bigger or the slow speed lower.'],
+    ['`DRIVE_SLOW_SPEED` (150), `DRIVE_SPEED_UP_CM` (4), `DRIVE_SLOW_ZONE_CM` (4)', 'The rover speeds up gently over the first few cm of a drive and slows down gently over the last few, so it does not lurch and stops on the spot. If drives overshoot, make the slow zone bigger or the slow speed lower. If the rover still jerks, make both zones bigger.'],
     ['`TURN_SPEED` (200), `TURN_SLOW_SPEED` (100), `TURN_SLOW_ZONE` (15)', 'The same for turns, in degrees. If turns overshoot or wobble, lower `TURN_SLOW_SPEED`.'],
     ['`TURN_ACCURACY` (2), `TURN_NUDGE_SPEED` (30)', 'A turn that ends more than 2 degrees off is corrected with slow nudges. If the rover sits still trying to nudge (a heavy rover, or one with many wheels), raise `TURN_NUDGE_SPEED`.'],
     ['`STEERING` (10)', 'How strongly the gyro steers the rover back when it drifts off course. 0 = off. If it wiggles while driving, lower it.'],
     ['`STUCK_MS` (1000)', 'Wheels not moving for this long = stuck.'],
     ['`TICK_MS` (20)', 'How often it checks the sensors while moving. Leave it.'],
-    ['`MAX_TRUSTED_CM` (180)', 'Distance readings further than this count as “no echo”. Set it a little below the longest straight path in your course.'],
+    ['`MAX_TRUSTED_CM` (200)', 'Distance readings further than this count as “no echo”. The sensor cannot see further than 2 m. If no straight path in your course is that long, set it a little below the longest one.'],
     ['`SETTLE_MS` (150)', 'How long a careful reading waits for the rover to stop wobbling.'],
   ];
   if (k.grid) rows.push(
@@ -626,7 +628,7 @@ function tuningChapter(pkg) {
     ['`NO_ECHO_SQUARES` (2)', 'When a look gets no echo, how many squares ahead it counts as open.']);
   return [
     H1('10. Fine tuning'),
-    P('The FINE TUNING settings are below the SETTINGS in your file. The default values (in brackets) work for most rovers, so **leave them alone unless something below describes your problem.**'),
+    P('The FINE TUNING settings are below the SETTINGS in your file. The default values (in brackets) work for most rovers. **Start with the defaults**, then change a setting when something below describes your problem, or when you want to see what it does.'),
     note('Change **one** setting at a time, write down the old value, and try it in the simulator before the real rover.', 'key'),
     table(['Setting (default)', 'What it does, and when to change it'], rows, [0.4, 0.6]),
   ];
@@ -694,7 +696,7 @@ function packageManual(pkg) {
     ...aboutChapter(pkg), ...firstHourChapter(pkg), ...fileChapter(pkg), ...settingsChapter(pkg), ...setupCheckChapter(),
     ...programChapter(pkg), ...colourChapter(pkg),
     ...(pkg === 'basic' ? basicRouteChapter() : pkg === 'wall' ? wallChapter() : explorerChapter()),
-    ...roverFitChapter(), ...tuningChapter(pkg), ...troubleChapter(pkg), ...quickRefChapter(pkg),
+    ...roverFitChapter(pkg), ...tuningChapter(pkg), ...troubleChapter(pkg), ...quickRefChapter(pkg),
   ];
   return writeDoc(k.file, 'Rover Software — ' + k.name, children);
 }
@@ -785,7 +787,8 @@ function simManual() {
     ...img('sim_logsel', 'After a run. A log line is selected, so a dashed rover shows where the rover was when it printed that line.', 640, 430),
     table(['On the map', 'What it shows'], [
       ['Brown boxes', 'Walls.'],
-      ['Green and red boxes', 'The colour patches.'],
+      ['Green, red and blue boxes', 'The colour patches.'],
+      ['Yellow dashed box', 'The `COURSE_` limits from your code (Wall follower and Maze explorer). The rover never plans a move outside it.'],
       ['Dashed circle and START', 'Where the rover starts. It always starts facing up the screen (NORTH).'],
       ['The rover', 'Its outline, its wheels (dark = driven by a motor), the distance sensor (orange dot), the colour sensor (blue ring) and the turning point (+).'],
       ['Blue line (**Path**)', 'Where the rover’s turning point went.'],
@@ -882,7 +885,7 @@ function simManual() {
     ], [0.22, 0.78]),
     gap(),
     ...img('sim_course', 'The Course tab.', 300, 380),
-    P('The **Course** tab has three ready-made courses (**Load preset**) and **Remove all walls**. The course is also shown as JSON, in cm with y pointing up the screen: each wall is `[x0, x1, y0, y1]`. To build your competition course exactly, measure it, type the walls into the JSON and click **Apply JSON**. **Copy JSON** saves it to share.'),
+    P('The **Course** tab has four ready-made courses (**Load preset**), including the real competition course, and **Remove all walls**. The course is also shown as JSON, in cm with y pointing up the screen: each wall is `[x0, x1, y0, y1]`. To build your competition course exactly, measure it, type the walls into the JSON and click **Apply JSON**. **Copy JSON** saves it to share.'),
     note('You cannot edit the course while a run is going: press Reset first.', 'tip'),
 
     H1('10. The Code tab'),
