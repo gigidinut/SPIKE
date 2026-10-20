@@ -1,7 +1,7 @@
 # ======================================================================
 # ROVER SOFTWARE - WALL FOLLOWER
 # ======================================================================
-# Package: Wall follower. Version 1.1, built 2026-10-19.
+# Package: Wall follower. Version 1.2, built 2026-10-20.
 #
 # TO GET YOUR ROVER GOING, YOU ONLY NEED TO CHANGE THESE PARTS:
 #   SETTINGS           just below: describe your rover and your course
@@ -28,7 +28,7 @@ import math
 import time
 from hub import port, motion_sensor, button
 
-SOFTWARE_VERSION = "1.1"     # which version of the software this is
+SOFTWARE_VERSION = "1.2"     # which version of the software this is
 
 # Compass directions, as gyro headings. NORTH is the way the rover faced when
 # the program started. Turning left makes the number bigger.
@@ -77,6 +77,9 @@ ROVER_BACK_CM = 11
 # Where the sensors sit along the rover, in cm from the turning point.
 # Positive = in front of it, negative = behind it.
 DISTANCE_SENSOR_POSITION_CM = 7
+# Building tip: a colour sensor IN FRONT is better. To check the floor next to
+# a wall, a rover with it in front just drives up and back. With it behind, the
+# rover must turn round and reverse blind at every wall - slower and riskier.
 COLOUR_SENSOR_POSITION_CM = -10
 
 # Which side of the hub faces up. motion_sensor.TOP means the hub lies flat
@@ -92,10 +95,11 @@ COLOUR_PAUSE_MS = 5000     # how long to stop on a colour, in ms
 REACT_ONCE = True          # True: react to each colour only the first time it is found
 
 # ---- Grid moves ----
-COURSE_NORTH_CM = 220   # how far the course reaches from the start in each direction.
+COURSE_NORTH_CM = 222   # how far the course reaches from the start in each direction.
 COURSE_SOUTH_CM = 0     # The rover never moves outside it. SOUTH is 0 when the start
-COURSE_EAST_CM = 220    # is on the edge of the course, so the rover cannot wander
-COURSE_WEST_CM = 220    # out through the entrance.
+COURSE_EAST_CM = 24     # is on the edge of the course, so the rover cannot wander
+COURSE_WEST_CM = 135    # out through the entrance. These fit the real course
+                        # (1.6 m x 2.3 m inside), starting in its bottom-right gap.
 CHECK_BY_WALLS = True   # also check the floor next to each wall the rover meets, which its
                         # path through the middle of the squares never reaches. Slower.
 
@@ -109,8 +113,9 @@ KEEP_WALL_ON_RIGHT = True   # True: keep the right hand on the wall. False: the 
 
 # ---- Movement ----
 DRIVE_SPEED = 400          # wheel speed when driving, degrees per second (max about 1000)
-DRIVE_SLOW_SPEED = 150     # wheel speed for the end of a drive, so it stops on the spot
-DRIVE_SLOW_ZONE_CM = 3     # slow down when this many cm from the end
+DRIVE_SLOW_SPEED = 150     # wheel speed at the start and end of a drive, so it starts and stops smoothly
+DRIVE_SPEED_UP_CM = 4      # speed up gently over this many cm at the start; 0 = full speed at once
+DRIVE_SLOW_ZONE_CM = 4     # slow down gently over this many cm at the end
 TURN_SPEED = 200           # wheel speed when turning
 TURN_SLOW_SPEED = 100      # wheel speed for the end of a turn, so it stops on target
 TURN_SLOW_ZONE = 15        # slow down when this many degrees from the target
@@ -121,9 +126,9 @@ STUCK_MS = 1000            # no progress for this long while driving or turning 
 TICK_MS = 20               # how often to check the sensors while moving, in ms
 
 # ---- Distance sensor ----
-MAX_TRUSTED_CM = 180   # readings further than this count as "no echo". In a course
-                       # where no straight path is over 2 m, a longer reading means
-                       # the sound missed, not that the way is clear.
+MAX_TRUSTED_CM = 200   # readings further than this count as "no echo". The sensor
+                       # cannot see further than 2 m. If no straight path in your
+                       # course is that long, set this a little below the longest one.
 SETTLE_MS = 150        # wait this long after moving before a careful reading
 
 # ---- Grid moves ----
@@ -580,6 +585,7 @@ async def setup_check():
 def check_movement_settings():
     check_number("DRIVE_SPEED", DRIVE_SPEED, 50, 1000)
     check_number("DRIVE_SLOW_SPEED", DRIVE_SLOW_SPEED, 20, 1000)
+    check_number("DRIVE_SPEED_UP_CM", DRIVE_SPEED_UP_CM, 0, 20)
     check_number("DRIVE_SLOW_ZONE_CM", DRIVE_SLOW_ZONE_CM, 0, 20)
     check_number("TURN_SPEED", TURN_SPEED, 30, 1000)
     check_number("TURN_SLOW_SPEED", TURN_SLOW_SPEED, 10, 1000)
@@ -651,7 +657,10 @@ async def drive(cm, speed, stop_at_wall_cm=0):
     """
     global last_drive_cm, driving_way, counted_degrees
     goal = cm_to_wheel_degrees(abs(cm))
-    slow_from = goal - cm_to_wheel_degrees(DRIVE_SLOW_ZONE_CM)
+    speed_up = cm_to_wheel_degrees(DRIVE_SPEED_UP_CM)
+    slow_zone = cm_to_wheel_degrees(DRIVE_SLOW_ZONE_CM)
+    top = abs(speed)
+    low = min(top, DRIVE_SLOW_SPEED)
     reset_wheel_counters()
     counted_degrees = 0
     if speed > 0:
@@ -669,12 +678,19 @@ async def drive(cm, speed, stop_at_wall_cm=0):
                     result = "wall"
                     break
 
-            # Slow down for the last few cm, or the rover rolls on past the end.
-            now_speed = speed
-            if wheel_degrees() > slow_from:
-                now_speed = DRIVE_SLOW_SPEED
-                if speed < 0:
-                    now_speed = -DRIVE_SLOW_SPEED
+            # Speed up gently at the start and slow down gently at the end,
+            # so the rover does not lurch, and stops on the spot instead of
+            # rolling on past the end. The speed goes in a straight line
+            # from low to top over the first DRIVE_SPEED_UP_CM, and back
+            # down to low over the last DRIVE_SLOW_ZONE_CM.
+            done = wheel_degrees()
+            now_speed = top
+            if done < speed_up:
+                now_speed = low + (top - low) * done / speed_up
+            if goal - done < slow_zone:
+                now_speed = min(now_speed, low + (top - low) * (goal - done) / slow_zone)
+            if speed < 0:
+                now_speed = -now_speed
 
             # Steering: error is how far the rover has drifted. If it has
             # drifted right (error above 0), the right wheel speeds up and the
@@ -1179,8 +1195,10 @@ async def check_by_wall(direction):
             return   # already close enough
         if not await turn_to(direction + 180):
             return   # no room to turn round here
+        # Reverse slowly: if the reading was a little out, the rover only
+        # touches the wall gently, and its stuck check stops it.
         print("wall check: reversing up to the wall")
-        await drive_backward(move)
+        await drive(move, -DRIVE_SLOW_SPEED)
         await drive_forward(cm_driven())
 
 

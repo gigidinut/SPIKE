@@ -14,7 +14,7 @@
   --bg: #E9EDE8; --panel: #F6F8F4; --raised: #FFFFFF; --ink: #1B2425; --muted: #5B6867;
   --line: #CFD7D0; --floor: #F8F9F4; --grid: #E6EAE2; --grid-major: #CDD5CB; --off-floor: #D9DFD6;
   --wall: #B67C55; --wall-edge: #4A3121; --path: #2459C4; --sonar: #D4861A;
-  --green: #2E9E57; --red: #CF3A33; --accent: #2459C4; --accent-ink: #FFFFFF;
+  --green: #2E9E57; --red: #CF3A33; --blue: #2F6FD0; --accent: #2459C4; --accent-ink: #FFFFFF;
   --ok: #2E8B4C; --warn: #A86E12; --bad: #C0392F;
   --k-turn: #7C8B89; --k-leg: #2459C4; --k-block: #C0392F; --k-radar: #A86E12; --k-decision: #6A47B5;
   --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
@@ -27,7 +27,7 @@
     --bg: #0F1415; --panel: #151C1E; --raised: #1B2427; --ink: #E2E9E6; --muted: #92A09E;
     --line: #29353A; --floor: #121A1C; --grid: #1A2427; --grid-major: #283539; --off-floor: #090D0E;
     --wall: #8C5B3D; --wall-edge: #E0B996; --path: #74A6FF; --sonar: #F2A43C;
-    --green: #3DBA6B; --red: #EA5650; --accent: #74A6FF; --accent-ink: #0B1220;
+    --green: #3DBA6B; --red: #EA5650; --blue: #5B93F0; --accent: #74A6FF; --accent-ink: #0B1220;
     --ok: #4CC07A; --warn: #E2A53E; --bad: #F06A62;
     --k-turn: #8A9997; --k-leg: #74A6FF; --k-block: #F06A62; --k-radar: #E2A53E; --k-decision: #A88BF0;
   }
@@ -154,6 +154,7 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
           <button type="button" data-tool="wall" aria-pressed="false">Wall</button>
           <button type="button" data-tool="green" aria-pressed="false"><span class="swatch" style="background:var(--green)"></span>Green</button>
           <button type="button" data-tool="red" aria-pressed="false"><span class="swatch" style="background:var(--red)"></span>Red</button>
+          <button type="button" data-tool="blue" aria-pressed="false"><span class="swatch" style="background:var(--blue)"></span>Blue</button>
           <button type="button" data-tool="start" aria-pressed="false">Start</button>
           <button type="button" data-tool="erase" aria-pressed="false">Erase</button>
         </div>
@@ -179,7 +180,7 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
           <span class="chip s-error" id="hudSettings" hidden>Settings do not match the rover - see the Rover tab</span>
         </div>
       </div>
-      <p class="hint" id="hint">Drag with Wall, Green or Red to draw. Click with Start or Erase. Scroll to zoom; drag with Look to move the view. The floor is 10 m by 10 m. Keys: R run · Space pause · N step.</p>
+      <p class="hint" id="hint">Drag with Wall, Green, Red or Blue to draw. Click with Start or Erase. Scroll to zoom; drag with Look to move the view. The floor is 10 m by 10 m. Keys: R run · Space pause · N step.</p>
     </section>
 
     <aside class="panel">
@@ -261,6 +262,7 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
       <div class="tabpane" id="tab-course" role="tabpanel" hidden>
         <label class="field"><span>Preset</span>
           <select id="preset">
+            <option value="real">Real course</option>
             <option value="drawing">Course drawing (0.2 cm per px)</option>
             <option value="arena">Test arena with box and inside corner</option>
             <option value="empty">Empty 2 m room</option>
@@ -270,7 +272,7 @@ textarea { width: 100%; min-height: 200px; font-family: var(--font-mono); font-s
         <label class="field"><span>Course as JSON (cm, y up)</span><textarea id="courseJson" spellcheck="false"></textarea></label>
         <div class="btnrow"><button type="button" id="btnApplyJson">Apply JSON</button><button type="button" id="btnCopyJson">Copy JSON</button></div>
         <p class="msg" id="jsonMsg"></p>
-        <p class="pane-note">Each wall is [x0, x1, y0, y1]. Green and red are the same shape, or null. Start is [x, y]; the rover starts facing up.</p>
+        <p class="pane-note">Each wall is [x0, x1, y0, y1]. Green, red and blue are the same shape, or null. Start is [x, y]; the rover starts facing up.</p>
       </div>
 
       <div class="tabpane" id="tab-code" role="tabpanel" hidden>
@@ -634,7 +636,8 @@ def _start(src, filename):
 
 
 def _snapshot():
-    out = {"cell": _ns.get("STEP_CM"), "pos": _ns.get("__pos__"), "target": _ns.get("__target__")}
+    out = {"cell": _ns.get("STEP_CM"), "pos": _ns.get("__pos__"), "target": _ns.get("__target__"),
+           "limits": [_ns.get("COURSE_" + d + "_CM") for d in ("WEST", "EAST", "SOUTH", "NORTH")]}
     m = _ns.get("__maze__")
     if m is not None:
         out["visited"] = list(getattr(m, "visited", ()))
@@ -659,7 +662,7 @@ const PHYS_PARAMS = [
   ['timeLimit', 900, 'End the simulation after this many seconds'],
 ];
 const P = {};
-const COLOR_GREEN = 6, COLOR_RED = 9, COLOR_WHITE = 10;
+const COLOR_BLUE = 3, COLOR_GREEN = 6, COLOR_RED = 9, COLOR_WHITE = 10;
 
 /* ===================== Rover description (cm, x right, y forward) ===================== */
 // The presets measure from the middle of the drive wheels. Students can
@@ -850,6 +853,16 @@ function deriveRover(r) {
 
 /* ===================== Course presets (cm, y up) ===================== */
 const PRESETS = {
+  // The real course, from the 2026-10 CAD drawing. Origin = inside bottom-left
+  // corner. Gaps (no wall) at the bottom right and top left, as drawn.
+  // The start is in the bottom-right gap; grid.py's COURSE_ limits keep the
+  // rover inside the outer walls.
+  real: {
+    walls: [[-14, 0, -10, 183.5], [-14, 90, -10, 0], [0, 15, 65, 95], [15, 22.5, 80, 95],
+            [-14, 45, 170, 183.5], [33.5, 45, 183.5, 200], [45, 170, 232, 240], [160, 170, 80, 240],
+            [115, 160, 80, 95], [60, 105, 118.2, 133.2], [97.5, 105, 133.2, 148.2], [97.5, 120, 148.2, 163.2]],
+    green: [117.5, 148.5, 118.5, 138], red: null, blue: [45, 115, 218.5, 232], start: [135, 10],
+  },
   drawing: {
     walls: [[-169, -149.4, -9.4, 190], [-101, 17, 176.6, 194], [17.6, 36.6, -9, 193.4], [-149.4, -16, -10.4, 8.4],
             [-26, 17.6, 143, 161.6], [-149.4, -84, 111.4, 132.4], [-60.6, 17.6, 66, 87], [-169, 36.6, 194, 197]],
@@ -875,7 +888,7 @@ const n1 = x => String(Math.round(x * 10) / 10);
 const round1 = v => Math.round(v * 10) / 10;
 function store(key, val) { try { localStorage.setItem('rcsl.' + key, JSON.stringify(val)); } catch (e) {} }
 function load(key) { try { const v = localStorage.getItem('rcsl.' + key); return v ? JSON.parse(v) : null; } catch (e) { return null; } }
-let course = clone(PRESETS.drawing);
+let course = clone(PRESETS.real);
 
 /* ===================== Simulation state ===================== */
 class Cancelled extends Error {}
@@ -1017,6 +1030,7 @@ const hub = {
     const inside = q => q && x >= q[0] && x <= q[1] && y >= q[2] && y <= q[3];
     if (inside(course.red)) return COLOR_RED;
     if (inside(course.green)) return COLOR_GREEN;
+    if (inside(course.blue)) return COLOR_BLUE;
     return COLOR_WHITE;
   },
 };
@@ -1338,13 +1352,14 @@ function courseChanged() {
 function formatCourse(c) {
   const walls = c.walls.map(w => '    ' + JSON.stringify(w.map(round1))).join(',\n');
   return '{\n  "walls": [\n' + walls + '\n  ],\n  "green": ' + JSON.stringify(c.green && c.green.map(round1)) +
-    ',\n  "red": ' + JSON.stringify(c.red && c.red.map(round1)) + ',\n  "start": ' + JSON.stringify(c.start.map(round1)) + '\n}';
+    ',\n  "red": ' + JSON.stringify(c.red && c.red.map(round1)) + ',\n  "blue": ' + JSON.stringify(c.blue ? c.blue.map(round1) : null) + ',\n  "start": ' + JSON.stringify(c.start.map(round1)) + '\n}';
 }
 function validCourse(c) {
   const rect = r => Array.isArray(r) && r.length === 4 && r.every(Number.isFinite) && r[0] < r[1] && r[2] < r[3];
   if (!c || !Array.isArray(c.walls) || !c.walls.every(rect)) return 'Each wall must be [x0, x1, y0, y1] with x0 < x1 and y0 < y1.';
   if (c.green !== null && !rect(c.green)) return 'Green must be [x0, x1, y0, y1] or null.';
   if (c.red !== null && !rect(c.red)) return 'Red must be [x0, x1, y0, y1] or null.';
+  if (c.blue != null && !rect(c.blue)) return 'Blue must be [x0, x1, y0, y1] or null.';
   if (!Array.isArray(c.start) || c.start.length !== 2 || !c.start.every(Number.isFinite)) return 'Start must be [x, y].';
   return '';
 }
@@ -1356,10 +1371,11 @@ $('btnApplyJson').addEventListener('click', () => {
   try { c = JSON.parse($('courseJson').value); } catch (e) { setMsg('That is not valid JSON: ' + e.message, 'bad'); return; }
   if (!('green' in c)) c.green = null;
   if (!('red' in c)) c.red = null;
+  if (!('blue' in c)) c.blue = null;
   const err = validCourse(c);
   if (err) { setMsg(err, 'bad'); return; }
   if (isActive()) resetRun();
-  course = { walls: c.walls, green: c.green, red: c.red, start: c.start };
+  course = { walls: c.walls, green: c.green, red: c.red, blue: c.blue, start: c.start };
   courseChanged(); fitView(); setMsg('Applied the course.', 'ok');
 });
 $('btnCopyJson').addEventListener('click', () => {
@@ -1781,7 +1797,7 @@ let view = { k: 1, ox: 0, oy: 0, minX: 0, maxY: 0, dpr: 1, w: 0, h: 0, ready: fa
 const colors = {};
 function readColors() {
   const cs = getComputedStyle(document.documentElement);
-  for (const n of ['floor', 'off-floor', 'grid', 'grid-major', 'wall', 'wall-edge', 'path', 'sonar', 'green', 'red', 'ink', 'muted', 'raised', 'accent', 'k-decision', 'k-block'])
+  for (const n of ['floor', 'off-floor', 'grid', 'grid-major', 'wall', 'wall-edge', 'path', 'sonar', 'green', 'red', 'blue', 'ink', 'muted', 'raised', 'accent', 'warn', 'k-decision', 'k-block'])
     colors[n] = cs.getPropertyValue('--' + n).trim();
 }
 readColors();
@@ -1789,7 +1805,7 @@ try { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', read
 function courseBounds() {
   let x0 = course.start[0] - 20, x1 = course.start[0] + 20, y0 = course.start[1] - 20, y1 = course.start[1] + 20;
   const add = r => { if (!r) return; x0 = Math.min(x0, r[0]); x1 = Math.max(x1, r[1]); y0 = Math.min(y0, r[2]); y1 = Math.max(y1, r[3]); };
-  course.walls.forEach(add); add(course.green); add(course.red);
+  course.walls.forEach(add); add(course.green); add(course.red); add(course.blue);
   return [x0 - 14, x1 + 14, y0 - 14, y1 + 14];
 }
 /* The floor is 10 m by 10 m, centred on (0, 0). The view can zoom out to
@@ -1874,6 +1890,7 @@ function drawPatch(r, col, label) {
 function drawCourse() {
   drawPatch(course.green, colors.green, 'GREEN');
   drawPatch(course.red, colors.red, 'RED');
+  drawPatch(course.blue, colors.blue, 'BLUE');
   ctx.fillStyle = colors.wall; ctx.strokeStyle = colors['wall-edge']; ctx.lineWidth = 1.5;
   for (const w of course.walls) { ctx.beginPath(); rectPath(w); ctx.fill(); ctx.stroke(); }
   const [x, y] = course.start, s = Math.max(6, R.width / 2 * view.k);
@@ -1882,6 +1899,12 @@ function drawCourse() {
   ctx.beginPath(); ctx.moveTo(sx(x), sy(y) - s - 6); ctx.lineTo(sx(x) - 5, sy(y) - s + 2); ctx.lineTo(sx(x) + 5, sy(y) - s + 2); ctx.closePath();
   ctx.fillStyle = colors.muted; ctx.fill();
   ctx.font = '700 12px "Barlow Condensed", sans-serif'; ctx.fillText('START', sx(x) + s + 4, sy(y) + 4);
+}
+function drawLimits() {              // the COURSE_ limits: the rover never plans a square outside them
+  if (!S || !S.snap || !S.snap.limits || !S.snap.limits.every(v => typeof v === 'number')) return;
+  const [w, e, so, n] = S.snap.limits, [ox, oy] = course.start;
+  ctx.strokeStyle = colors.warn; ctx.lineWidth = 2; ctx.setLineDash([8, 5]);
+  ctx.strokeRect(sx(ox - w), sy(oy + n), (w + e) * view.k, (so + n) * view.k); ctx.setLineDash([]);
 }
 function drawMap() {
   if (!S || !S.snap || !S.snap.cell || !S.snap.visited || !$('showMap').checked) return;
@@ -1962,6 +1985,7 @@ function draw() {
   drawCourse();
   const now = performance.now();
   if (S && isActive() && now - snapAt > 200) { snapAt = now; takeSnapshot(); }
+  drawLimits();
   drawMap();
   if (S) {
     if ($('showEchoes').checked) {
@@ -2025,7 +2049,8 @@ cv.addEventListener('pointerdown', e => {
     const inside = r => r && x >= r[0] && x <= r[1] && y >= r[2] && y <= r[3];
     for (let i = course.walls.length - 1; i >= 0; i--) if (inside(course.walls[i])) { course.walls.splice(i, 1); courseChanged(); return; }
     if (inside(course.green)) { course.green = null; courseChanged(); return; }
-    if (inside(course.red)) { course.red = null; courseChanged(); }
+    if (inside(course.red)) { course.red = null; courseChanged(); return; }
+    if (inside(course.blue)) { course.blue = null; courseChanged(); }
     return;
   }
   drag = { a: [snapv(x), snapv(y)], b: [snapv(x), snapv(y)] };
@@ -2050,6 +2075,7 @@ cv.addEventListener('pointerup', () => {
   if (tool === 'wall') course.walls.push(r);
   if (tool === 'green') course.green = r;
   if (tool === 'red') course.red = r;
+  if (tool === 'blue') course.blue = r;
   courseChanged();
 });
 
